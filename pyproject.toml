@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=65"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "open_fairprune"
+version = "0.0.0"
+description = "An implementation of the FairPrune paper https://arxiv.org/abs/2203.02110"
+requires-python = ">=3.10"
+authors = [
+  { name = "Christoffer Sommerlund", email = "chriso-99@hotmail.com" },
+]
+dependencies = [
+  "pip>=23",
+]
+
+[tool.black]
+target-version = ["py310"]
+line-length = 120
+
+[project.scripts]
+# hello-world = "open_fairprune.filename:func_name"
+
+[tool.setuptools.package-data]
+# open_fairprune = ["data/img.png"]
