@@ -11,6 +11,9 @@ from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from torchmetrics.classification import BinaryMatthewsCorrCoef
 
+from backpack import backpack, extend
+from backpack.extensions import DiagHessian, BatchDiagHessian
+
 from open_fairprune.data_util import DATA_PATH, LoanDataset, load_model, timeit
 from open_fairprune.simple_nn import MODEL_NAME, Net
 
@@ -134,6 +137,26 @@ def main(setup: ExperimentSetup):
                 log_metric("val loss", test_loss, step=epoch)
         finally:
             mlflow.pytorch.log_model(model, "model")
+    
+    # Saliency 
+    model_extend = extend(model)
+    metric_extend = extend(metric)
+    for batch_idx, (*data, target) in enumerate(train_loader):
+        data = [d.to(device) for d in data]
+        target = target.to(device)
+        output = model_extend(*data)
+        loss = metric_extend(output.squeeze(), target)
+        loss.backward()
+        with backpack(DiagHessian(), BatchDiagHessian()):
+            loss.backward()
+        break
+
+    for name, param in model.named_parameters():
+        print(name)
+        print(".grad.shape:             ", param.grad.shape)
+        print(".diag_h.shape:           ", param.diag_h.shape)
+        print(".diag_h_batch.shape:     ", param.diag_h_batch.shape)
+
 
 
 if __name__ == "__main__":
