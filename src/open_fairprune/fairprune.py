@@ -86,7 +86,7 @@ def get_parameter_salience(model_extend, metric_extend, data, target, saliency_d
     with backpack(DiagHessian()):
         loss.backward()
     
-    for name, param in model.named_parameters():
+    for name, param in model_extend.named_parameters():
             
             saliency_dict[name] += param.diag_h
     
