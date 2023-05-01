@@ -1,9 +1,14 @@
+import mlflow
 from torch.utils.data import DataLoader
 
 from open_fairprune.data_util import DATA_PATH, LoanDataset, load_model, timeit
+from open_fairprune.train import metric
 
 if __name__ == "__main__":
-    model = load_model("c9c6956dba1b483a888798b2eb37a0b2")
+    runs = mlflow.search_runs()
+    latest_model = runs.iloc[runs.end_time.argmax()]
+    print("Getting model from: UTC", latest_model.end_time)
+    model = load_model(latest_model.run_id)
 
     dataset = LoanDataset("dev", returns=["data", "group", "label"])
 
@@ -20,7 +25,12 @@ if __name__ == "__main__":
         **data_kwargs,
     )
 
-    data, group, label = next(iter(dev_loader))
-    pred = model(data.to("cuda"))
-    accuracy_score = (pred.argmax(dim=1) == label.to("cuda")).to(float).mean()
+    data, group, y_true = next(iter(dev_loader))
+    y_true = y_true.to("cuda")
+    print(f"{y_true.unique(return_counts=True) = }")
+
+    y_pred = model(data.to("cuda"))
+    accuracy_score = (y_pred.round() == y_true).to(float).mean()
     print(f"Accuracy: {accuracy_score:.4f}")
+
+    print(f'F1-score: {1 / metric(model(data.to("cuda")).squeeze(), y_true)}')

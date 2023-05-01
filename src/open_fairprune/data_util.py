@@ -29,9 +29,15 @@ def timeit(msg: str) -> float:
     print(f"{start_date} Time: {msg} {time.perf_counter() - start:.3f} seconds")
 
 
-def load_model(id: str):
+def load_model(id: str = "latest", model_name: str = "model"):
     """E.g.: model = load_model("aa246d9d2106472492442ff362b1b143")"""
-    return mlflow.pytorch.load_model(model_uri=f"file://{DATA_PATH}/mlruns/0/{id}/artifacts/model")
+    if id == "latest":
+        runs = mlflow.search_runs()
+        latest_model = runs.iloc[runs.end_time.argmax()]
+        print("Getting model from: UTC", latest_model.end_time)
+        id = latest_model.run_id
+
+    return mlflow.pytorch.load_model(model_uri=f"file://{DATA_PATH}/mlruns/0/{id}/artifacts/{model_name}")
 
 
 class LoanDataset(Dataset):
@@ -53,6 +59,11 @@ class LoanDataset(Dataset):
             "test": df.ID % 7 == 6,  # Around 15%
         }
         df = df[splits[split]]
+        # gb = df.groupby("Default")
+        # g0, g1 = gb.get_group(0), gb.get_group(1)
+        # g1 = g1.sample(len(g0), replace=True)
+        # df = pd.concat([g0.iloc[:8000], g1])
+
         self.target = torch.tensor(df.Default.to_numpy(), dtype=torch.float32)
         self.group = torch.tensor((df.Client_Gender == "Male").to_numpy(), dtype=torch.float32)
         df = df.drop(columns=["Default", "Client_Gender"])

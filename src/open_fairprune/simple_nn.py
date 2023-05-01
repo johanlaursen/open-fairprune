@@ -20,4 +20,5 @@ class Net(nn.Module):
         )
 
     def forward(self, segment):
-        return self.seq1(segment)
+        x = self.seq1(segment)
+        return x.squeeze()
