@@ -120,10 +120,7 @@ if __name__ == "__main__":
             )
 
         with timeit("iter dataloader"):
-            iterator = iter(segment_train_dataloader)
-
-            for *data, labels in tqdm(iterator):
-                features, group = data
+            for features, group, labels in segment_train_dataloader:
                 print(features.shape)
                 print(group.shape)
                 print(labels.shape)
