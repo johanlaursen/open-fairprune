@@ -67,7 +67,7 @@ class LoanDataset(Dataset):
         # g1 = g1.sample(len(g0), replace=True)
         # df = pd.concat([g0.iloc[:8000], g1])
 
-        self.target = torch.tensor(df.Default.to_numpy(), dtype=torch.float32)
+        self.target = torch.tensor(df.Default.to_numpy(), dtype=torch.long)
         self.group = torch.tensor((df.Client_Gender == "Male").to_numpy(), dtype=torch.float32)
         df = df.drop(columns=["Default", "Client_Gender"])
 

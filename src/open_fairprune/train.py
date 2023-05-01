@@ -10,12 +10,18 @@ from mlflow import log_metric, log_params
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 
+from open_fairprune import simple_nn
 from open_fairprune.data_util import DATA_PATH, LoanDataset, load_model, timeit
 from open_fairprune.simple_nn import MODEL_NAME, Net
 
 torch.manual_seed(42)
 torch.backends.cudnn.benchmark = True
 torch.backends.cuda.matmul.allow_tf32 = True
+device = torch.device("cuda")
+metric = nn.CrossEntropyLoss(
+    # weight=torch.tensor([5.0, 1.0]
+    #                     ).to(device)
+)
 
 
 @click.command()
@@ -45,7 +51,7 @@ class ExperimentSetup(typing.NamedTuple):
 
 
 def get_setup(**params) -> ExperimentSetup:
-    model = load_model(params["checkpoint"]) if params["checkpoint"] else Net()
+    model = load_model(params["checkpoint"]) if params["checkpoint"] else simple_nn.model
 
     return ExperimentSetup(
         model=model,
@@ -60,7 +66,7 @@ def get_setup(**params) -> ExperimentSetup:
 def train(model, device, train_loader, optimizer):
     model.train()
     train_loss = 0
-    for data, target in enumerate(train_loader):
+    for data, target in train_loader:
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
         output = model(data)
@@ -72,16 +78,16 @@ def train(model, device, train_loader, optimizer):
     return train_loss / len(train_loader)
 
 
-def metric(y_pred, y_true):
-    # Adapted from: https://www.kaggle.com/code/rejpalcz/best-loss-function-for-f1-score-metric/notebook#Optimal-loss-function---macro-F1-score
-    assert y_pred.ndim == y_true.ndim == 1
-    tp = (y_true * y_pred).sum()
-    fp = ((1 - y_true) * y_pred).sum()
-    fn = (y_true * (1 - y_pred)).sum()
+# def metric(y_pred, y_true):
+#     # Adapted from: https://www.kaggle.com/code/rejpalcz/best-loss-function-for-f1-score-metric/notebook#Optimal-loss-function---macro-F1-score
+#     assert y_pred.ndim == y_true.ndim == 1
+#     tp = (y_true * y_pred).sum()
+#     fp = ((1 - y_true) * y_pred).sum()
+#     fn = (y_true * (1 - y_pred)).sum()
 
-    f1 = 2 * tp / (2 * tp + fp + fn)
-    assert 0 <= f1 <= 1, f"{f1 = }"
-    return 1 / f1  # Minimise loss, so maximizes F1
+#     f1 = 2 * tp / (2 * tp + fp + fn)
+#     assert 0 <= f1 <= 1, f"{f1 = }"
+#     return 1 / f1  # Minimise loss, so maximizes F1
 
 
 def test(model, device, test_loader, epoch):
