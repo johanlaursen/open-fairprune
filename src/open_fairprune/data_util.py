@@ -29,7 +29,7 @@ def timeit(msg: str) -> float:
     print(f"{start_date} Time: {msg} {time.perf_counter() - start:.3f} seconds")
 
 
-def load_model(id: str = "latest", model_name: str = "model"):
+def load_model(id: str = "latest", model_name: str = "model", return_run_id=False):
     """E.g.: model = load_model("aa246d9d2106472492442ff362b1b143")"""
     if id == "latest":
         runs = mlflow.search_runs()
@@ -37,7 +37,10 @@ def load_model(id: str = "latest", model_name: str = "model"):
         print("Getting model from: UTC", latest_model.end_time)
         id = latest_model.run_id
 
-    return mlflow.pytorch.load_model(model_uri=f"file://{DATA_PATH}/mlruns/0/{id}/artifacts/{model_name}")
+    if return_run_id:
+        return mlflow.pytorch.load_model(model_uri=f"file://{DATA_PATH}/mlruns/0/{id}/artifacts/{model_name}"), id
+    else:
+        return mlflow.pytorch.load_model(model_uri=f"file://{DATA_PATH}/mlruns/0/{id}/artifacts/{model_name}")
 
 
 class LoanDataset(Dataset):
