@@ -12,10 +12,10 @@ class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
         self.seq1 = nn.Sequential(  # new seq to allow concat embedding
-            nn.Linear(INPUT_SIZE, 100),
+            nn.Linear(INPUT_SIZE, 1000),
             nn.ReLU(),
             nn.Dropout(0.25),
-            nn.Linear(100, 1),
+            nn.Linear(1000, 1),
             nn.Sigmoid(),
         )
 
