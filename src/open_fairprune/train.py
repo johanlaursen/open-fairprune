@@ -60,12 +60,11 @@ def get_setup(**params) -> ExperimentSetup:
 def train(model, device, train_loader, optimizer):
     model.train()
     train_loss = 0
-    for batch_idx, (*data, target) in enumerate(train_loader):
-        data = [d.to(device) for d in data]
-        target = target.to(device)
+    for data, target in enumerate(train_loader):
+        data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
-        output = model(*data)
-        loss = metric(output.squeeze(), target)
+        output = model(data)
+        loss = metric(output, target)
         loss.backward()
         train_loss += loss
         optimizer.step()
@@ -89,11 +88,10 @@ def test(model, device, test_loader, epoch):
     model.eval()
     test_loss = 0
     with torch.no_grad():
-        for *data, target in test_loader:
-            data = [d.to(device) for d in data]
-            target = target.to(device)
-            output = model(*data)
-            test_loss += metric(output.squeeze(), target)
+        for data, target in test_loader:
+            data, target = data.to(device), target.to(device)
+            output = model(data)
+            test_loss += metric(output, target)
 
     print(f"Test set Epoch {epoch}: Average loss: {(test_loss / len(test_loader)):.4f}")
     return test_loss / len(test_loader)

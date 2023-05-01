@@ -1,14 +1,10 @@
-import mlflow
 from torch.utils.data import DataLoader
 
-from open_fairprune.data_util import DATA_PATH, LoanDataset, load_model, timeit
+from open_fairprune.data_util import LoanDataset, load_model
 from open_fairprune.train import metric
 
 if __name__ == "__main__":
-    runs = mlflow.search_runs()
-    latest_model = runs.iloc[runs.end_time.argmax()]
-    print("Getting model from: UTC", latest_model.end_time)
-    model = load_model(latest_model.run_id)
+    model = load_model()
 
     dataset = LoanDataset("dev", returns=["data", "group", "label"])
 
