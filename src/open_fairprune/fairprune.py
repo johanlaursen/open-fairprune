@@ -3,10 +3,7 @@ from backpack.extensions import DiagHessian, BatchDiagHessian
 import torch
 
 from open_fairprune.data_util import load_model
-from open_fairprune import metric
-RUN_ID = ""
-model = load_model(RUN_ID)
-num_of_batches = 5
+
 def fairprune(
             model,
             metric,
@@ -89,21 +86,9 @@ def get_parameter_salience(model_extend, metric_extend, data, target, saliency_d
     with backpack(DiagHessian()):
         loss.backward()
     
-    for name, param_0 in model.named_parameters():
-            saliency_dict[name] += param_0
+    for name, param in model.named_parameters():
+            
+            saliency_dict[name] += param.diag_h
     
     return saliency_dict
 
-
-
-    # for name, param in model.named_parameters():
-    #     print(name)
-    #     print(".grad.shape:             ", param.grad.shape)
-    #     print(".diag_h.shape:           ", param.diag_h.shape)
-    #     print(".diag_h_batch.shape:     ", param.diag_h_batch.shape)
-
-
-    
-
-    
-    # get idx of maximum saliency for each group
