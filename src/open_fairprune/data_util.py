@@ -104,7 +104,7 @@ if __name__ == "__main__":
         with timeit("dataset"):
             segment_train_dataset = LoanDataset(
                 split="train",
-                returns=["data", "label"],
+                returns=["data", "group", "label"],
                 fuck_your_ram=1_000_000,
             )
 
@@ -123,4 +123,7 @@ if __name__ == "__main__":
             iterator = iter(segment_train_dataloader)
 
             for *data, labels in tqdm(iterator):
-                pass
+                features, group = data
+                print(features.shape)
+                print(group.shape)
+                print(labels.shape)
