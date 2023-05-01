@@ -149,7 +149,7 @@ if __name__ == "__main__":
         lr=1e-3,
         decay=0.0,
         gamma=0.90,
-        epochs=100,
+        epochs=10,
         checkpoint="",
     )
     setup = get_setup(**kwargs)
