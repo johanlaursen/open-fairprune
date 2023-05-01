@@ -9,6 +9,7 @@ import torch.optim as optim
 from mlflow import log_metric, log_params
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
+from torchmetrics.classification import BinaryMatthewsCorrCoef
 
 from open_fairprune.data_util import DATA_PATH, LoanDataset, load_model, timeit
 from open_fairprune.simple_nn import MODEL_NAME, Net
@@ -16,6 +17,8 @@ from open_fairprune.simple_nn import MODEL_NAME, Net
 torch.manual_seed(42)
 torch.backends.cudnn.benchmark = True
 torch.backends.cuda.matmul.allow_tf32 = True
+
+metric = BinaryMatthewsCorrCoef().to("cuda")
 
 
 @click.command()
@@ -65,7 +68,7 @@ def train(model, device, train_loader, optimizer):
         target = target.to(device)
         optimizer.zero_grad()
         output = model(*data)
-        loss = F.binary_cross_entropy(output.squeeze(), target)
+        loss = metric(output.squeeze(), target)
         loss.backward()
         train_loss += loss
         optimizer.step()
@@ -81,7 +84,7 @@ def test(model, device, test_loader, epoch):
             data = [d.to(device) for d in data]
             target = target.to(device)
             output = model(*data)
-            test_loss += F.binary_cross_entropy(output.squeeze(), target)
+            test_loss += metric(output.squeeze(), target)
 
     print(f"Test set Epoch {epoch}: Average loss: {(test_loss / len(test_loader)):.4f}")
     return test_loss / len(test_loader)
@@ -138,9 +141,9 @@ if __name__ == "__main__":
 
     kwargs = dict(
         batch_size=int(87040 / 7),  # No greater than this or dev set doesnt work
-        lr=1e-1,
+        lr=1e-3,
         decay=0.0,
-        gamma=1.0,
+        gamma=0.90,
         epochs=100,
         checkpoint="",
     )
