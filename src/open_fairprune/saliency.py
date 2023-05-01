@@ -7,7 +7,16 @@ from open_fairprune import metric
 RUN_ID = ""
 model = load_model(RUN_ID)
 num_of_batches = 5
-def fairprune(model, metric, data_loader, label, device, prune_ratio, beta, privileged_group, unprivileged_group):
+def fairprune(
+            model,
+            metric,
+            data_loader,
+            device,
+            prune_ratio,
+            beta,
+            privileged_group,
+            unprivileged_group,
+            num_of_batches=5):
     """
     ARGS:
         model: model to be pruned
@@ -19,6 +28,7 @@ def fairprune(model, metric, data_loader, label, device, prune_ratio, beta, priv
         beta: ratio between 0 and 1 for weighting of privileged group
         privileged_group: privileged group idx in group tensor
         unprivileged_group: unprivileged group idx in group tensor
+        num_of_batches: number of batches to be used for saliency calculation
 
     """
 
