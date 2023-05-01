@@ -1,22 +1,69 @@
-import numpy as np
+import datawig
 import pandas as pd
-import seaborn as sns
 
-df = pd.read_csv("data/Train_Dataset.csv")
+df = pd.read_csv('data/Train_Dataset.csv')
 
-print(df["Default"].value_counts())
+splits = {
+    "train": df.ID % 7 <= 4,
+    "dev": df.ID % 7 == 5,
+    "test": df.ID % 7 == 6 #Around 15%
+}
+train_df = df[splits["train"]].copy()
+print(train_df['Default'].value_counts())
+
+# Remove random symbols in the data
+def isfloat(x):
+    try:
+        float(x)
+        return True
+    except:
+        return False
+def isint(x):
+    try:
+        int(x)
+        return True
+    except:
+        return False
+    
+float_columns = ['Client_Income', 'Credit_Amount', 'Loan_Annuity', 'Population_Region_Relative', 'Score_Source_2', 'Car_Owned', 'Bike_Owned', 'Active_Loan', 'House_Own', 'Child_Count', 'Age_Days', 'Employed_Days', 'Registration_Days', 'ID_Days', 'Client_Family_Members', 'Cleint_City_Rating', 'Application_Process_Day', 'Application_Process_Hour', 'Phone_Change', 'Credit_Bureau']
+train_df.loc[:,float_columns] = train_df[train_df[float_columns].applymap(isfloat)].astype(float)
 
 # Null values in each column and percentage missing:
-print(df.isnull().sum().sort_values(ascending=False))
-print((df.isnull().sum() / len(df)).sort_values(ascending=False))
+print((train_df.isnull().sum()/len(train_df)).sort_values(ascending=False))
+
+#Dropping everything with more than 50% missing values and score source 3
+train_df = train_df.dropna(thresh=len(train_df)/2, axis=1)
+#df = df.drop(['Score_Source_3'], axis=1)
+
+#Replacing nan values in Client Occupation with 'nan'
+train_df['Client_Occupation'] = train_df['Client_Occupation'].fillna('nan')
+print(train_df['Client_Occupation'].value_counts())
+
+#logarithmic histplot of Client_Income
+sns.histplot(train_df['Client_Income'], log_scale=True, bins=15)
 
 
-# Clean Client_Income column
-df["Client_Income"] = df["Client_Income"].str.replace("$", "").replace("", None).astype(float)
+y_train = train_df['Default']
+X_train = train_df.drop(['Default'], axis=1)
 
-# logarithmic histplot of Client_Income
-sns.histplot(df["Client_Income"], log_scale=True, bins=15)
+numerical_imputer = datawig.SimpleImputer(
+    input_columns=float_columns, # column(s) containing information about the column we want to impute
+    output_column='Credit_Bureau', # the column we'd like to impute values for
+    output_path = 'numerical_imputer_model' # stores model data and metrics
+    )
 
-print(df["Social_Circle_Default"].value_counts())
+numerical_imputer.fit(train_df=X_train)
 
-print(df["Client_Occupation"].value_counts())
+imputed = numerical_imputer.predict(X_train)
+
+categorical_columns = ['Accompany_Client', 'Client_Income_Type', 'Client_Education', 'Client_Marital_Status', 'Client_Gender', 'Loan_Contract_Type', 'Client_Housing_Type', 'Client_Occupation', 'Client_Permanent_Match_Tag', 'Client_Contact_Work_Tag', 'Type_Organization']
+
+categorical_imputer = datawig.SimpleImputer(
+    input_columns=categorical_columns, # column(s) containing information about the column we want to impute
+    output_column='Loan_Contract_Type', # the column we'd like to impute values for
+    output_path = 'categorical_imputer_model' # stores model data and metrics
+    )
+
+categorical_imputer.fit(train_df=X_train)
+
+categorical_imputed = categorical_imputer.predict(X_train)
