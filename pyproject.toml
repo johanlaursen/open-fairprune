@@ -12,6 +12,8 @@ authors = [
 ]
 dependencies = [
   "pip>=23",
+  "backpack-for-pytorch",
+  "tabulate",
 ]
 
 [tool.black]
