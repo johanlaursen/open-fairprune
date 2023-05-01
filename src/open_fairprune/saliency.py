@@ -76,8 +76,10 @@ def fairprune(
             topk_indices = torch.topk(saliency,k).indices
             param[topk_indices] = 0
         
-
+    
     # TODO check that the pruning is actually done in place
+
+    return model
          
 
 
