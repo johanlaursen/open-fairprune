@@ -74,11 +74,15 @@ def train(model, device, train_loader, optimizer):
 
 
 def metric(y_pred, y_true):
-    intersection = (y_true * y_pred).sum()
-    union = y_true.sum() + y_pred.sum()
-    eps = 1e-10
-    dice = (2.0 * intersection + eps) / (union + eps)
-    return dice
+    # Adapted from: https://www.kaggle.com/code/rejpalcz/best-loss-function-for-f1-score-metric/notebook#Optimal-loss-function---macro-F1-score
+    assert y_pred.ndim == y_true.ndim == 1
+    tp = (y_true * y_pred).sum()
+    fp = ((1 - y_true) * y_pred).sum()
+    fn = (y_true * (1 - y_pred)).sum()
+
+    f1 = 2 * tp / (2 * tp + fp + fn)
+    assert 0 <= f1 <= 1, f"{f1 = }"
+    return 1 / f1  # Minimise loss, so maximizes F1
 
 
 def test(model, device, test_loader, epoch):
@@ -121,8 +125,6 @@ def main(setup: ExperimentSetup):
 
     scheduler = StepLR(optimizer, step_size=1, gamma=setup.params["gamma"])
 
-    mlflow.set_tracking_uri(uri=f"file://{DATA_PATH}\mlruns")
-
     best_test_loss = 999
     with mlflow.start_run():
         try:
@@ -146,7 +148,7 @@ if __name__ == "__main__":
 
     kwargs = dict(
         batch_size=int(87040 / 7),  # No greater than this or dev set doesnt work
-        lr=1e-3,
+        lr=1e-5,
         decay=0.0,
         gamma=0.90,
         epochs=10,
