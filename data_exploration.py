@@ -63,7 +63,7 @@ def main():
 
             male_mse = mse(male_df[f'{col}_imputed'].round(0).astype(int), male_df[col])
             female_mse = mse(female_df[f'{col}_imputed'].round(0).astype(int), female_df[col])
-            file.write(f"{col}:\nMale RMSE: {male_mse}\nFemale RMSE: {female_mse}")
+            file.write(f"{col}:\nMale RMSE: {male_mse}\nFemale RMSE: {female_mse}\n")
 
 if __name__ == "__main__":
     main()
