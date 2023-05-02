@@ -1,9 +1,10 @@
 import datawig
 import pandas as pd
 from sklearn.metrics import mean_squared_error as mse
+from sklearn.preprocessing import StandardScaler
 
 def main():
-    df = pd.read_csv('data/Train_Dataset.csv')
+    df = pd.read_csv('Train_Dataset.csv')
 
     splits = {
         "train": df.ID % 7 <= 4,
@@ -41,9 +42,12 @@ def main():
     y_train = train_df['Default']
     X_train = train_df.drop(['Default'], axis=1)
 
+    #Standardize float columns
+    X_train[float_columns] = StandardScaler().fit_transform(X_train[float_columns])
+
     #Write down mse to a file
     with open('mse.txt', 'w') as file:
-        for col in float_columns:
+        for i, col in enumerate(float_columns):
 
             numerical_imputer = datawig.SimpleImputer(
                 input_columns=float_columns, # column(s) containing information about the column we want to impute
@@ -61,8 +65,9 @@ def main():
             male_df = not_null[not_null['Client_Gender'] == 'Male']
             female_df = not_null[not_null['Client_Gender'] == 'Female']
 
-            male_mse = mse(male_df[f'{col}_imputed'].round(0).astype(int), male_df[col])
-            female_mse = mse(female_df[f'{col}_imputed'].round(0).astype(int), female_df[col])
+            male_mse = mse(male_df[f'{col}_imputed'], male_df[col])
+            female_mse = mse(female_df[f'{col}_imputed'], female_df[col])
+            print(f'Finished column {i}/{len(float_columns)}')
             file.write(f"{col}:\nMale RMSE: {male_mse}\nFemale RMSE: {female_mse}\n")
 
 if __name__ == "__main__":
