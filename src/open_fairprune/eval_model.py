@@ -1,14 +1,15 @@
 import typing
 from contextlib import suppress
+from lib2to3.pgen2.pgen import generate_grammar
 
 import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import DataLoader
-from torchmetrics import Accuracy, F1Score
+from torchmetrics import AUROC, Accuracy, F1Score, Recall, Specificity
 from torchmetrics.classification import BinaryAccuracy
 
-from open_fairprune.data_util import LoanDataset, load_model
+from open_fairprune.data_util import get_dataset, load_model
 from open_fairprune.train import metric
 
 
@@ -26,6 +27,30 @@ class FairnessMetrics(typing.NamedTuple):
         {self.Δ_eq_odds_t1 = :.2f}
         {self.Δ_eq_out_s0  = :.2f}
         {self.Δ_eq_out_s1  = :.2f}"""
+
+
+class GroupScore(typing.NamedTuple):
+    total: float
+    group0: float
+    group1: float
+
+    def __repr__(self):
+        total, group0, group1 = self.total, self.group0, self.group1
+        return f"{total = :.2f} ({group0 = :.2f}, {group1 = :.2f})"
+
+
+class GeneralMetrics(typing.NamedTuple):
+    accuracy: GroupScore
+    f1: GroupScore
+    tpr: GroupScore  # recall, sensitivity
+    fpr: GroupScore  # 1 - specificity
+    roc_auc: GroupScore
+
+    def __repr__(self):
+        out = []
+        for field in self._fields:
+            out.append(f"{field:<10}: {getattr(self, field)}")
+        return "\n".join(out)
 
 
 def get_fairness_metrics(y_pred, y_true, group, *, thresh=0.5, verbose=False) -> FairnessMetrics:
@@ -65,7 +90,7 @@ def get_fairness_metrics(y_pred, y_true, group, *, thresh=0.5, verbose=False) ->
 
     if verbose:
         print(
-            f"{pr_s_cond_g}",
+            f"{pr_s_cond_g  = }",
             f"{pr_s_cond_gt = }",
             f"{pr_t_cond_gs = }",
             sep="\n",
@@ -74,37 +99,51 @@ def get_fairness_metrics(y_pred, y_true, group, *, thresh=0.5, verbose=False) ->
     return FairnessMetrics(Δ_parity, Δ_eq_odds_t0, Δ_eq_odds_t1, Δ_eq_out_s0, Δ_eq_out_s1)
 
 
+def get_general_metrics(y_pred, y_true, group) -> FairnessMetrics:
+    df = pd.DataFrame(
+        {
+            "G": group,
+            "y_true": y_true,
+            "y_pred": y_pred[:, 1],
+        }
+    )
+    gb = df.groupby("G")
+    g0_df, g1_df = [gb.get_group(group) for group in sorted(gb.groups)]
+
+    metrics = dict(  # order is important
+        accuracy=Accuracy("binary"),
+        f1=F1Score("binary"),
+        tpr=Recall("binary"),
+        fpr=lambda x, y: 1 - Specificity("binary")(x, y),
+        roc_auc=AUROC("binary"),
+    )
+
+    groups = [df, g0_df, g1_df]  # order is important
+
+    results = []
+    for metric_func in metrics.values():
+        group_metrics = []
+        for subset_df in groups:
+            subset_y_pred, subset_y_true = torch.tensor(subset_df.y_pred.values), torch.tensor(subset_df.y_true.values)
+            group_metrics.append(metric_func(subset_y_pred, subset_y_true))
+        results.append(GroupScore(*group_metrics))
+
+    return GeneralMetrics(*results)
+
+
 if __name__ == "__main__":
     favors_minority_100_to_one = "020ffd14ba2f44458ab0b435fabc6bab"
     favors_minority_10_to_one = "368701f1065f4cd18fad9b51e7ec961f"
 
     model = load_model(favors_minority_10_to_one)
 
-    dataset = LoanDataset("dev", returns=["data", "group", "label"])
-
-    data_kwargs = {
-        # "num_workers": 4,
-        "shuffle": True,  # Only done once for entire run
-        "batch_size": len(dataset),
-        "drop_last": True,  # Drop last batch if it's not full
-    }
-
-    dev_loader = DataLoader(
-        dataset,
-        **data_kwargs,
-    )
-
-    data, group, y_true = next(iter(dev_loader))
+    data, group, y_true = get_dataset("dev")
 
     with torch.no_grad():
-        y_pred = model(data.to("cuda")).softmax(1).detach().cpu()
+        y_pred = model(data.to("cuda")).softmax(dim=1).detach().cpu()
 
-    thresh = 0.5
-    fairness_metrics = get_fairness_metrics(y_pred, y_true, group, thresh)
+    fairness_metrics = get_fairness_metrics(y_pred, y_true, group, thresh=0.5)
     print(fairness_metrics)
 
-    BinaryAccuracy()(y_pred[:, 1], y_true)
-
-    # accuracy = Accuracy("multiclass", num_classes=2)(y_pred, y_true)
-    # accuracy
-    # y_pred
+    general_metrics = get_general_metrics(y_pred, y_true, group)
+    print(general_metrics)

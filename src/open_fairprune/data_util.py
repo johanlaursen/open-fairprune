@@ -114,31 +114,21 @@ class LoanDataset(Dataset):
         return output
 
 
+def get_dataset(split: str, returns=["data", "group", "label"]):
+    dataset = LoanDataset(split, returns=returns)
+    loader = DataLoader(
+        dataset,
+        shuffle=True,
+        batch_size=len(dataset),
+        drop_last=True,
+    )
+    return next(iter(loader))
+
+
 if __name__ == "__main__":
-    from tqdm import tqdm
+    with timeit("get data"):
+        features, group, labels = get_dataset("train")
 
-    BATCH_SIZE = 128
-    with timeit("total"):
-        with timeit("dataset"):
-            segment_train_dataset = LoanDataset(
-                split="train",
-                returns=["data", "group", "label"],
-                fuck_your_ram=1_000_000,
-            )
-
-        with timeit("cache"):
-            segment_train_dataset[0]
-
-        with timeit("dataloader"):
-            segment_train_dataloader = DataLoader(
-                segment_train_dataset,
-                batch_size=BATCH_SIZE,
-                shuffle=True,
-                drop_last=True,
-            )
-
-        with timeit("iter dataloader"):
-            for features, group, labels in segment_train_dataloader:
-                print(features.shape)
-                print(group.shape)
-                print(labels.shape)
+    print(features.shape)
+    print(group.shape)
+    print(labels.shape)
