@@ -67,7 +67,7 @@ def main():
 
             male_mse = mse(male_df[f'{col}_imputed'], male_df[col])
             female_mse = mse(female_df[f'{col}_imputed'], female_df[col])
-            print(f'Finished column {i}/{len(float_columns)}')
+            print(f'Finished column {i}/{len(float_columns)-1}')
             file.write(f"{col}:\nMale RMSE: {male_mse}\nFemale RMSE: {female_mse}\n")
 
 if __name__ == "__main__":
