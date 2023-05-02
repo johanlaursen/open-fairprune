@@ -62,6 +62,10 @@ class LoanDataset(Dataset):
             "test": df.ID % 7 == 6,  # Around 15%
         }
         df = df[splits[split]]
+
+        # df.Default.value_counts()  # 0=80009, 1=7031, 11:1 ratio
+        # df.Client_Gender.value_counts()  # Male=56070, Female=29263, XNA=2, M:F ratio=2:1
+
         # gb = df.groupby("Default")
         # g0, g1 = gb.get_group(0), gb.get_group(1)
         # g1 = g1.sample(len(g0), replace=True)
