@@ -17,6 +17,10 @@ dependencies = [
   "backpack-for-pytorch",
   "tabulate",
   "torchmetrics",
+  "mlflow",
+  "click",
+  "scikit-learn",
+  "pandas"
 ]
 
 [tool.black]
