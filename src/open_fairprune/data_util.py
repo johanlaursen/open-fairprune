@@ -70,10 +70,11 @@ class LoanDataset(Dataset):
         # g0, g1 = gb.get_group(0), gb.get_group(1)
         # g1 = g1.sample(len(g0), replace=True)
         # df = pd.concat([g0.iloc[:8000], g1])
+        df = df[df.Age_Days.str.isnumeric().fillna(False)]
 
         self.target = torch.tensor(df.Default.to_numpy(), dtype=torch.long)
-        self.group = torch.tensor((df.Client_Gender == "Male").to_numpy(), dtype=torch.float32)
-        df = df.drop(columns=["Default", "Client_Gender"])
+        self.group = torch.tensor((df.Age_Days.astype(int) // 365 > 30).to_numpy(), dtype=torch.float32)
+        df = df.drop(columns=["Default", "Age_Days"])
 
         cols_b4 = len(df.columns)
         df = df.select_dtypes(include=[np.number, bool]).astype(float)
