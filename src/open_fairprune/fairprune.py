@@ -44,7 +44,6 @@ def fairprune(
     # Explicitely set unprivileged and privileged group to 0 and 1
     group[group == unprivileged_group] = 0
     group[group == privileged_group] = 1
-    # TODO make sure masked select preserves device
 
     data = data.to(device)
     group = group.to(device)
