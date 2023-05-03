@@ -59,6 +59,7 @@ class FairPruneMetrics(typing.NamedTuple):
     EOpp0: float
     EOpp1: float
     EOdd: float
+    EOdd_sep_abs: float
 
     @classmethod
     def from_general_metrics(cls, metrics: GeneralMetrics) -> "FairPruneMetrics":
@@ -66,11 +67,12 @@ class FairPruneMetrics(typing.NamedTuple):
         EOpp0 = abs(metrics.tnr.group0 - metrics.tnr.group1)
         EOpp1 = abs(metrics.tpr.group0 - metrics.fpr.group1)
         EOdd = abs(metrics.tpr.group1 - metrics.tpr.group0 + metrics.fpr.group1 - metrics.fpr.group0)
-        return cls(EOpp0, EOpp1, EOdd)
+        EOdd_sep_abs = abs(metrics.tpr.group1 - metrics.tpr.group0) + abs(metrics.fpr.group1 - metrics.fpr.group0)
+        return cls(EOpp0, EOpp1, EOdd, EOdd_sep_abs)
 
     def __repr__(self):
-        EOpp0, EOpp1, EOdd = self.EOpp0, self.EOpp1, self.EOdd
-        return f"{EOpp0 = :.2f} {EOpp1 = :.2f} {EOdd = :.2f}"
+        EOpp0, EOpp1, EOdd, EOdd_sep_abs = self.EOpp0, self.EOpp1, self.EOdd, self.EOdd_sep_abs
+        return f"{EOpp0 = :.2f} {EOpp1 = :.2f} {EOdd = :.2f} {EOdd_sep_abs = :.2f}"
 
 
 def get_fairness_metrics(y_pred, y_true, group, *, thresh=0.5, verbose=False) -> FairnessMetrics:
