@@ -8,6 +8,7 @@ import mlflow
 import numpy as np
 import pandas as pd
 import torch
+from click import FLOAT
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
@@ -19,6 +20,65 @@ root = Path(this.__path__[0]).parents[1]
 DATA_PATH = root / "data"
 
 INPUT_SIZE = 19
+
+
+FLOAT_COLUMNS = [
+    "Active_Loan",
+    "Age_Days",
+    "Application_Process_Day",
+    "Application_Process_Hour",
+    "Bike_Owned",
+    "Car_Owned",
+    "Child_Count",
+    "Cleint_City_Rating",
+    "Client_Family_Members",
+    "Client_Income",
+    "Credit_Amount",
+    "Credit_Bureau",
+    "Default",
+    "Employed_Days",
+    "Homephone_Tag",
+    "House_Own",
+    "ID",
+    "ID_Days",
+    "Loan_Annuity",
+    "Mobile_Tag",
+    "Own_House_Age",
+    "Phone_Change",
+    "Population_Region_Relative",
+    "Registration_Days",
+    "Score_Source_1",
+    "Score_Source_2",
+    "Score_Source_3",
+    "Social_Circle_Default",
+    "Workphone_Working",
+]
+
+CATEGORICAL = [
+    "Accompany_Client",
+    "Active_Loan",
+    "Bike_Owned",
+    "Car_Owned",
+    "Child_Count",
+    "Cleint_City_Rating",
+    "Client_Contact_Work_Tag",
+    "Client_Education",
+    "Client_Family_Members",
+    "Client_Gender",
+    "Client_Housing_Type",
+    "Client_Income_Type",
+    "Client_Marital_Status",
+    "Client_Occupation",
+    "Client_Permanent_Match_Tag",
+    "Homephone_Tag",
+    "Homephone_Tag",
+    "House_Own",
+    "Loan_Contract_Type",
+    "Population_Region_Relative",
+    "T",
+    "Type_Organization",
+    "Workphone_Working",
+]
 
 
 @contextmanager
@@ -43,6 +103,32 @@ def load_model(id: str = "latest", model_name: str = "model", return_run_id=Fals
         return mlflow.pytorch.load_model(model_uri=f"file://{DATA_PATH}/mlruns/0/{id}/artifacts/{model_name}")
 
 
+def get_split_df(split="train"):
+    df = pd.read_csv(DATA_PATH / "Train_Dataset.csv")
+    splits = {
+        "train": df.ID % 7 <= 4,
+        "dev": df.ID % 7 == 5,
+        "test": df.ID % 7 == 6,  # Around 15%
+    }
+    df = df[splits[split]]
+
+    def isfloat(x):
+        try:
+            float(x)
+            return True
+        except:
+            return False
+
+    df.loc[:, FLOAT_COLUMNS] = df[FLOAT_COLUMNS][df[FLOAT_COLUMNS].applymap(isfloat)]
+    df = df.astype({c: "float" for c in FLOAT_COLUMNS})
+
+    df = df.dropna(subset="Age_Days")  # NOTE: Drops where we dont have label!
+    df["T"] = torch.tensor(df.Default.to_numpy(), dtype=torch.long)
+    df["G"] = torch.tensor((df.Age_Days.astype(int) // 365 > 30).to_numpy(), dtype=torch.float32)
+    df = df.drop(columns=["Default", "Age_Days"])
+    return df
+
+
 class LoanDataset(Dataset):
     def __init__(
         self,
@@ -54,14 +140,7 @@ class LoanDataset(Dataset):
     ):
         self.transform = transform
         self.returns = returns
-        df = pd.read_csv(DATA_PATH / "Train_Dataset.csv")
-
-        splits = {
-            "train": df.ID % 7 <= 4,
-            "dev": df.ID % 7 == 5,
-            "test": df.ID % 7 == 6,  # Around 15%
-        }
-        df = df[splits[split]]
+        df = get_split_df(split)
 
         # df.Default.value_counts()  # 0=80009, 1=7031, 11:1 ratio
         # df.Client_Gender.value_counts()  # Male=56070, Female=29263, XNA=2, M:F ratio=2:1
@@ -70,11 +149,9 @@ class LoanDataset(Dataset):
         # g0, g1 = gb.get_group(0), gb.get_group(1)
         # g1 = g1.sample(len(g0), replace=True)
         # df = pd.concat([g0.iloc[:8000], g1])
-        df = df[df.Age_Days.str.isnumeric().fillna(False)]
 
-        self.target = torch.tensor(df.Default.to_numpy(), dtype=torch.long)
-        self.group = torch.tensor((df.Age_Days.astype(int) // 365 > 30).to_numpy(), dtype=torch.float32)
-        df = df.drop(columns=["Default", "Age_Days"])
+        self.target = torch.tensor(df.T.to_numpy(), dtype=torch.long)
+        self.group = torch.tensor(df.G.to_numpy(), dtype=torch.long)
 
         cols_b4 = len(df.columns)
         df = df.select_dtypes(include=[np.number, bool]).astype(float)
