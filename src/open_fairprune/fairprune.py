@@ -84,7 +84,6 @@ def get_parameter_salience(model_extend, metric_extend, data, target, saliency_d
         loss.backward()
 
     for name, param in model_extend.named_parameters():
-        # TODO add paramters**2 to saliency_dict
         saliency_dict[name] += param.diag_h * torch.square(param)
 
     return saliency_dict
