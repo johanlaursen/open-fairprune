@@ -29,6 +29,7 @@ metric = nn.CrossEntropyLoss(weight=torch.tensor([1.0, 11.0]).to(device))
 @click.option("--gamma", default=1.0, type=float)
 @click.option("--epochs", default=10)
 @click.option("--checkpoint", default="", type=str)
+@click.option("--group", default=False, type=bool)
 def init_cli(
     **kwargs,
 ):
@@ -51,11 +52,12 @@ class ExperimentSetup(typing.NamedTuple):
 def get_setup(**params) -> ExperimentSetup:
     model = load_model(params["checkpoint"]) if params["checkpoint"] else simple_nn.model
 
+    returns = ["data", "label"] if not params["group"] else ["data", "group", "label"]
     return ExperimentSetup(
         model=model,
         model_name=f"{MODEL_NAME}",
         dataset_kwargs={
-            "returns": ["data", "label"],
+            "returns": returns,
         },
         params=params,
     )
@@ -76,6 +78,34 @@ def train(model, device, train_loader, optimizer):
     return train_loss / len(train_loader)
 
 
+def metric_fairness_loss(output, target, group, device):
+    # This should be group fairness
+
+    group_means = torch.zeros(len(torch.unique(group))).to(device)
+    for i, group_id in enumerate(torch.unique(group)):
+        # group_means[i] = output[group == group_id].mean()
+        group_mask = group == group_id
+        group_means[i] = torch.mean(output[group_mask])  # dim=0 needed?
+
+    fairness_loss = torch.norm(group_means[i:] - group_means[:i], p=2)
+    return fairness_loss
+
+
+def train_fairness_loss(model, device, train_loader, optimizer):
+    model.train()
+    train_loss = 0
+    for data, group, target in train_loader:
+        data, group, target = data.to(device), group.to(device), target.to(device)
+        optimizer.zero_grad()
+        output = model(data)
+        loss_fairness = metric_fairness_loss(output, target, group, device)
+        loss = metric(output, target) + loss_fairness
+        loss.backward()
+        train_loss += loss
+        optimizer.step()
+    return train_loss / len(train_loader)
+
+
 def test(model, device, test_loader, epoch):
     model.eval()
     test_loss = correct = total = 0
@@ -88,6 +118,23 @@ def test(model, device, test_loader, epoch):
             total += len(target)
 
     print(f"Test Epoch {epoch}: Avg loss: {(test_loss / len(test_loader)):.4f}, Avg accuracy = {correct / total:.4f}")
+    return test_loss / len(test_loader)
+
+
+def test_fairness_loss(model, device, test_loader, epoch):
+    model.eval()
+    test_loss = correct = total = 0
+    with torch.no_grad():
+        for data, group, target in test_loader:
+            data, group, target = data.to(device), group.to(device), target.to(device)
+            output = model(data)
+            loss_fairness = metric_fairness_loss(output, target, group, device)
+            test_loss += metric(output, target) + loss_fairness
+            correct += (output.argmax(axis=1) == target).sum()
+            total += len(target)
+    print(
+        f"Test Epoch {epoch}: Avg fairness loss: {(test_loss / len(test_loader)):.4f}, Avg accuracy = {correct / total:.4f}"
+    )
     return test_loss / len(test_loader)
 
 
@@ -118,13 +165,19 @@ def main(setup: ExperimentSetup):
     scheduler = StepLR(optimizer, step_size=1, gamma=setup.params["gamma"])
 
     best_test_loss = 999
+    if setup.params["group"]:
+        train_func = train_fairness_loss
+        test_func = test_fairness_loss
+    else:
+        train_func = train
+        test_func = test
     with mlflow.start_run():
         try:
             log_params(setup.params)
 
             for epoch in range(1, setup.params["epochs"] + 1):
-                train_loss = train(model, device, train_loader, optimizer)
-                if (test_loss := test(model, device, dev_loader, epoch)) < best_test_loss:
+                train_loss = train_func(model, device, train_loader, optimizer)
+                if (test_loss := test_func(model, device, dev_loader, epoch)) < best_test_loss:
                     best_test_loss = test_loss
 
                 scheduler.step()
