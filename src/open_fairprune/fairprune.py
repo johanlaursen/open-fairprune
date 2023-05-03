@@ -1,11 +1,19 @@
 import mlflow
 import torch
+import torch.nn as nn
 from backpack import backpack, extend
 from backpack.extensions import DiagHessian
 from torch.utils.data import DataLoader
 
-from open_fairprune.data_util import LoanDataset, load_model, timeit
+from open_fairprune.data_util import LoanDataset, get_dataset, load_model, timeit
+from open_fairprune.eval_model import (
+    FairPruneMetrics,
+    get_fairness_metrics,
+    get_general_metrics,
+)
 from open_fairprune.train import metric
+
+metric = nn.CrossEntropyLoss()
 
 
 def fairprune(
@@ -33,12 +41,13 @@ def fairprune(
     saliency_1_dict = {name: torch.zeros_like(param) for name, param in model.named_parameters()}
 
     for batch_idx, (data, group, target) in enumerate(data_loader):
-
         # Excplicitely set unprivileged and privileged group to 0 and 1
         group[group == unprivileged_group] = 0
         group[group == privileged_group] = 1
         # TODO make sure masked select preserves device
 
+        data = data.to(device)
+        group = group.to(device)
         target = target.to(device)
 
         one_indices = torch.nonzero(group == 1, as_tuple=False).squeeze(1)
@@ -96,12 +105,15 @@ if __name__ == "__main__":
     prune_ratio = 0.5
     beta = 0.3
 
-    device = torch.device("cpu")
+    device = torch.device("cuda")
     lossfunc = metric
 
     model, RUN_ID = load_model(return_run_id=True)
     client = mlflow.MlflowClient()
     setup = client.get_run(RUN_ID).to_dictionary()["data"]["params"]
+
+    dev, train = get_dataset("dev")  # HERE
+
     data_kwargs = {
         # "num_workers": 4,
         "pin_memory": True,
@@ -136,3 +148,19 @@ if __name__ == "__main__":
 
     with mlflow.start_run(RUN_ID):
         mlflow.pytorch.log_model(model_pruned, f"fairpruned_model_{prune_ratio}_{beta}")
+
+        data, group, y_true = get_dataset("dev")
+
+        for model, suffix in [(model, "pre"), (model_pruned, "post")]:
+            with torch.no_grad():
+                y_pred = model(data.to("cuda")).softmax(dim=1).detach().cpu()
+
+            general_metrics = get_general_metrics(y_pred, y_true, group)
+            fairprune_metrics = FairPruneMetrics.from_general_metrics(general_metrics)
+
+            fairness_metrics = get_fairness_metrics(y_pred, y_true, group)
+
+            mlflow.log_metrics(
+                {f"{key}_{suffix}": value.item() for key, value in zip(fairprune_metrics._fields, fairprune_metrics)}
+            )
+            print(fairness_metrics)
