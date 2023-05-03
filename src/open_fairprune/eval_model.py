@@ -89,7 +89,7 @@ def get_fairness_metrics(y_pred, y_true, group, *, thresh=0.5, verbose=False) ->
         }
     )
     # If error, return nan
-    Δ_parity = Δ_eq_odds_t0 = Δ_eq_odds_t1 = Δ_eq_out_s0 = Δ_eq_out_s1 = Δ_eq_opp = np.nan
+    Δ_parity = Δ_eq_odds_t0 = Δ_eq_odds_t1 = Δ_eq_out_s0 = Δ_eq_out_s1 = np.nan
 
     pr_s_cond_g = df.groupby("G").S.mean()
     Δ_parity = abs(pr_s_cond_g.diff()[-1])
@@ -100,9 +100,6 @@ def get_fairness_metrics(y_pred, y_true, group, *, thresh=0.5, verbose=False) ->
         Δ_eq_odds_t0 = abs(pr_s_cond_gt.xs(False, level="T").diff()[-1])
     with suppress(KeyError):
         Δ_eq_odds_t1 = abs(pr_s_cond_gt.xs(True, level="T").diff()[-1])
-
-    with suppress(KeyError):
-        Δ_eq_opp_s1 = abs(pr_s_cond_gt.xs(True, level="S").diff()[-1])
 
     pr_t_cond_gs = df.groupby(["G", "S"])["T"].mean()
     with suppress(KeyError):
@@ -158,7 +155,7 @@ if __name__ == "__main__":
     favors_minority_100_to_one = "020ffd14ba2f44458ab0b435fabc6bab"
     favors_minority_10_to_one = "368701f1065f4cd18fad9b51e7ec961f"
 
-    model = load_model(favors_minority_10_to_one)
+    model = load_model()
 
     data, group, y_true = get_dataset("dev")
 
