@@ -16,9 +16,7 @@ from open_fairprune.train import metric
 metric = nn.CrossEntropyLoss()
 
 
-def fairprune(
-    model, metric, train_dataset, device, prune_ratio, beta, privileged_group, unprivileged_group, num_of_batches=1
-):
+def fairprune(model, metric, train_dataset, device, prune_ratio, beta, privileged_group, unprivileged_group):
     """
     ARGS:
         model: model to be pruned
@@ -30,8 +28,6 @@ def fairprune(
         beta: ratio between 0 and 1 for weighting of privileged group
         privileged_group: privileged group idx in group tensor
         unprivileged_group: unprivileged group idx in group tensor
-        num_of_batches: number of batches to be used for saliency calculation
-
     """
 
     model_extend = extend(model).to(device)
