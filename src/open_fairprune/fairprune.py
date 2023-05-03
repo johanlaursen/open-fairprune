@@ -17,13 +17,13 @@ metric = nn.CrossEntropyLoss()
 
 
 def fairprune(
-    model, metric, data_loader, device, prune_ratio, beta, privileged_group, unprivileged_group, num_of_batches=5
+    model, metric, train_dataset, device, prune_ratio, beta, privileged_group, unprivileged_group, num_of_batches=1
 ):
     """
     ARGS:
         model: model to be pruned
         metric: loss function to be used for saliency
-        data_loader: data loader for the dataset
+        train_dataset: train_dataset
         label: label to be predicted
         device: device to run on
         prune_ratio: ratio of parameters to be pruned on each layer
@@ -40,36 +40,25 @@ def fairprune(
     saliency_0_dict = {name: torch.zeros_like(param) for name, param in model.named_parameters()}
     saliency_1_dict = {name: torch.zeros_like(param) for name, param in model.named_parameters()}
 
-    for batch_idx, (data, group, target) in enumerate(data_loader):
-        # Excplicitely set unprivileged and privileged group to 0 and 1
-        group[group == unprivileged_group] = 0
-        group[group == privileged_group] = 1
-        # TODO make sure masked select preserves device
+    (data, group, target) = train_dataset
+    # Explicitely set unprivileged and privileged group to 0 and 1
+    group[group == unprivileged_group] = 0
+    group[group == privileged_group] = 1
+    # TODO make sure masked select preserves device
 
-        data = data.to(device)
-        group = group.to(device)
-        target = target.to(device)
+    data = data.to(device)
+    group = group.to(device)
+    target = target.to(device)
 
-        one_indices = torch.nonzero(group == 1, as_tuple=False).squeeze(1)
-        zero_indices = torch.nonzero(group == 0, as_tuple=False).squeeze(1)
-        data_0 = torch.index_select(data, 0, zero_indices).to(device)
-        data_1 = torch.index_select(data, 0, one_indices).to(device)
-        target_0 = torch.index_select(target, 0, zero_indices).to(device)
-        target_1 = torch.index_select(target, 0, one_indices).to(device)
+    one_indices = torch.nonzero(group == 1, as_tuple=False).squeeze(1)
+    zero_indices = torch.nonzero(group == 0, as_tuple=False).squeeze(1)
+    data_0 = torch.index_select(data, 0, zero_indices).to(device)
+    data_1 = torch.index_select(data, 0, one_indices).to(device)
+    target_0 = torch.index_select(target, 0, zero_indices).to(device)
+    target_1 = torch.index_select(target, 0, one_indices).to(device)
 
-        saliency_0_dict = get_parameter_salience(model_extend, metric_extend, data_0, target_0, saliency_0_dict)
-        saliency_1_dict = get_parameter_salience(model_extend, metric_extend, data_1, target_1, saliency_1_dict)
-
-        # number of batches to average over
-        if batch_idx + 1 == num_of_batches:
-            break
-
-    # average saliency over batches
-    for name, param in saliency_0_dict.items():
-        saliency_0_dict[name] = param / num_of_batches
-
-    for name, param in saliency_1_dict.items():
-        saliency_1_dict[name] = param / num_of_batches
+    saliency_0_dict = get_parameter_salience(model_extend, metric_extend, data_0, target_0, saliency_0_dict)
+    saliency_1_dict = get_parameter_salience(model_extend, metric_extend, data_1, target_1, saliency_1_dict)
 
     # get difference in saliency for each parameter
     saliency_diff_dict = {
@@ -112,7 +101,8 @@ if __name__ == "__main__":
     client = mlflow.MlflowClient()
     setup = client.get_run(RUN_ID).to_dictionary()["data"]["params"]
 
-    dev, train = get_dataset("dev")  # HERE
+    dev = get_dataset("dev")
+    train = get_dataset("train")
 
     data_kwargs = {
         # "num_workers": 4,
@@ -137,7 +127,7 @@ if __name__ == "__main__":
         model_pruned = fairprune(
             model=model,
             metric=lossfunc,
-            data_loader=train_loader,
+            train_dataset=train,
             device=device,
             prune_ratio=prune_ratio,
             beta=beta,
