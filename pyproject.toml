@@ -20,7 +20,9 @@ dependencies = [
   "mlflow",
   "click",
   "scikit-learn",
-  "pandas"
+  "pandas",
+  "holoviews",
+  "hvplot"
 ]
 
 [tool.black]
