@@ -10,7 +10,9 @@ from torchmetrics import AUROC, Accuracy, F1Score, Recall, Specificity
 from torchmetrics.classification import BinaryAccuracy
 
 from open_fairprune.data_util import get_dataset, load_model
-from open_fairprune.train import metric
+from open_fairprune.train import METRIC
+
+metric = METRIC
 
 
 class GroupScore(typing.NamedTuple):
