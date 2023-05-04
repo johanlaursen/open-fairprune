@@ -19,7 +19,7 @@ import open_fairprune as this
 root = Path(this.__path__[0]).parents[1]
 DATA_PATH = root / "data"
 
-INPUT_SIZE = 19
+INPUT_SIZE = 29
 
 
 FLOAT_COLUMNS = [
@@ -123,8 +123,8 @@ def get_split_df(split="train"):
     df = df.astype({c: "float" for c in FLOAT_COLUMNS})
 
     df = df.dropna(subset="Age_Days")  # NOTE: Drops where we dont have label!
-    df["T"] = torch.tensor(df.Default.to_numpy(), dtype=torch.long)
-    df["G"] = torch.tensor((df.Age_Days.astype(int) // 365 > 30).to_numpy(), dtype=torch.float32)
+    df["T"] = df.Default.astype(bool)
+    df["G"] = df.Age_Days.astype(int) // 365 > 30
     df = df.drop(columns=["Default", "Age_Days"])
     return df
 
@@ -150,7 +150,7 @@ class LoanDataset(Dataset):
         # g1 = g1.sample(len(g0), replace=True)
         # df = pd.concat([g0.iloc[:8000], g1])
 
-        self.target = torch.tensor(df.T.to_numpy(), dtype=torch.long)
+        self.target = torch.tensor(df["T"].to_numpy(), dtype=torch.long)
         self.group = torch.tensor(df.G.to_numpy(), dtype=torch.long)
 
         cols_b4 = len(df.columns)
@@ -166,7 +166,7 @@ class LoanDataset(Dataset):
 
         self.fuck_your_ram = fuck_your_ram  # Load this many samples into memory
         self._gigacache = {}
-        assert len(self.df.columns) == INPUT_SIZE, "Please update training data feature size"
+        assert len(self.df.columns) == INPUT_SIZE, f"Please update training data feature size: {INPUT_SIZE = }"
 
     def __len__(self):
         return len(self.df)
