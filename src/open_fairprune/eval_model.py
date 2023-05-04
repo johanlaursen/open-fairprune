@@ -29,7 +29,6 @@ class GeneralMetrics(typing.NamedTuple):
     tpr: GroupScore  # recall, sensitivity
     fpr: GroupScore  # 1 - specificity
     tnr: GroupScore  # Specificity
-    roc_auc: GroupScore
 
     def __repr__(self):
         out = []
@@ -120,7 +119,7 @@ def get_fairness_metrics(y_pred, y_true, group, *, thresh=0.5, verbose=False) ->
     return FairnessMetrics(Δ_parity, Δ_eq_odds_t0, Δ_eq_odds_t1, Δ_eq_out_s0, Δ_eq_out_s1)
 
 
-def get_general_metrics(y_pred, y_true, group) -> FairnessMetrics:
+def get_general_metrics(y_pred, y_true, group, thresh=0.5) -> FairnessMetrics:
     df = pd.DataFrame(
         {
             "G": group,
@@ -131,13 +130,13 @@ def get_general_metrics(y_pred, y_true, group) -> FairnessMetrics:
     gb = df.groupby("G")
     g0_df, g1_df = [gb.get_group(group) for group in sorted(gb.groups)]
 
+    kwargs = dict(task="binary", threshold=thresh)
     metrics = dict(  # order is important
-        accuracy=Accuracy("binary"),
-        f1=F1Score("binary"),
-        tpr=Recall("binary"),
-        fpr=lambda x, y: 1 - Specificity("binary")(x, y),
-        tnr=Specificity("binary"),
-        roc_auc=AUROC("binary"),
+        accuracy=Accuracy(**kwargs),
+        f1=F1Score(**kwargs),
+        tpr=Recall(**kwargs),
+        fpr=lambda x, y: 1 - Specificity(**kwargs)(x, y),
+        tnr=Specificity(**kwargs),
     )
 
     groups = [df, g0_df, g1_df]  # order is important
@@ -151,6 +150,36 @@ def get_general_metrics(y_pred, y_true, group) -> FairnessMetrics:
         results.append(GroupScore(*group_metrics))
 
     return GeneralMetrics(*results)
+
+
+def ROC_curve(y_pred, y_true, group):
+    import holoviews as hv
+    import hvplot.pandas
+
+    hv.extension("bokeh")
+    data = []
+    for threshold in range(1, 100, 1):
+        metrics = get_general_metrics(y_pred, y_true, group, thresh=threshold / 100)
+        data.append((0, metrics.fpr.group0, metrics.tpr.group0, threshold / 100))
+        data.append((1, metrics.fpr.group1, metrics.tpr.group1, threshold / 100))
+
+    df = pd.DataFrame(data, columns=["G", "fpr", "tpr", "thresh"])
+    mid_df = df.query("thresh==0.5")
+
+    kwargs = dict(
+        by="G",
+        x="fpr",
+        y="tpr",
+        hover_cols=["thresh"],
+        xlabel="False Positive Rate = Pr(S=1 | G=g, T=0)",
+        ylabel="True Positive Rate = Pr(S=1 | G=g, T=1)",
+    )
+    ROC_plot = df.hvplot(**kwargs) * df.hvplot.scatter(**kwargs)
+    mids = mid_df.hvplot.scatter(**kwargs, marker="square")
+    ROC_plot * mids
+
+    mids
+    return ROC_plot * mids
 
 
 if __name__ == "__main__":

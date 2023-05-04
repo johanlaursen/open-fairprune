@@ -72,6 +72,47 @@ def get_group_conditional_prob_plots():
     return densities
 
 
+def ROC_curve(clf):
+    prob = pd.Series(clf.predict_proba(X_train[group])[:, 1], name="prob")
+    T = pd.Series(y_train[group], name="T")
+    G = pd.Series([bool(group_no)] * len(T), name="G")
+
+    df = pd.concat(
+        [get_group_df(group, group_no) for group_no, group in enumerate(train_group_masks)],
+    )
+
+    ROC_g = []
+    ROC_G = []
+    for threshold in range(5, 100, 5):
+        df["S"] = df["prob"] * 100 > threshold
+        # TP_G = Count(S, G, T) / Count(G, T)
+        # FP_G = Count(S, G, ~T) / Count(G, ~T)
+        TP_g = len(df.query("S and ~G and T")) / len(df.query("~G and T"))
+        FP_g = len(df.query("S and ~G and ~T")) / len(df.query("~G and ~T"))
+        ROC_g.append([TP_g, FP_g, threshold])
+        TP_G = len(df.query("S and G and T")) / len(df.query("G and T"))
+        FP_G = len(df.query("S and G and ~T")) / len(df.query("G and ~T"))
+        ROC_G.append([TP_G, FP_G, threshold])
+
+        if threshold == 50:
+            g_mid = [[TP_g, FP_g, 50]]
+            G_mid = [[TP_G, FP_G, 50]]
+
+    kwargs = dict(
+        y="0",
+        x="1",
+        hover_cols=["2"],
+        xlabel="False Positive Rate = Pr(S=1 | G=g, T=0)",
+        ylabel="True Positive Rate = Pr(S=1 | G=g, T=1)",
+    )
+    ROC_plot = pd.DataFrame(ROC_g).hvplot(**kwargs).relabel("G=1") * pd.DataFrame(ROC_G).hvplot(**kwargs).relabel("G=2")
+    mids = pd.DataFrame(g_mid).hvplot.scatter(**kwargs) * pd.DataFrame(G_mid).hvplot.scatter(**kwargs)
+    return ROC_plot * mids
+
+
+plots = ROC_curve(clfs[0]).opts(title=str(clfs[0])) + ROC_curve(clfs[1]).opts(title=str(clfs[1]))
+plots.cols(1)
+
 densities = get_group_conditional_prob_plots()
 plot = hv.Layout(densities.values()).cols(1)
 
