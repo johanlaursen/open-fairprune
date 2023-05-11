@@ -1,3 +1,4 @@
+import subprocess
 import typing
 
 import click
@@ -28,7 +29,7 @@ METRIC = nn.CrossEntropyLoss(weight=torch.tensor([1.0, 11.0]).to(device))
 @click.option("--gamma", default=1.0, type=float)
 @click.option("--epochs", default=10)
 @click.option("--checkpoint", default="", type=str)
-@click.option("--group", default=False, type=bool)
+@click.option("--group_lambda", default=0.0, type=float)
 def init_cli(
     **kwargs,
 ):
@@ -98,8 +99,11 @@ def metric_fairness_loss(output, target, group):
     y_trues = torch.cartesian_prod(target[g0], target[g1])
     y_preds = torch.cartesian_prod(output[g0][:, 1], output[g1][:, 1])
 
-    fairness = ((y_trues[0] == y_trues[0]) * (y_preds[0] - y_preds[0])) ** 2
-    return fairness.mean()
+    assert len(y_trues) == len(target[g0]) * len(target[g1]), f"{len(y_trues)} != {len(target[g0]) * len(target[g1])}"
+
+    individual_fairness = (y_trues[:, 0] == y_trues[:, 1]) * (y_preds[:, 0] - y_preds[:, 1])
+    group_fairness = individual_fairness.sum() ** 2
+    return group_fairness
 
 
 def main(setup: ExperimentSetup):
@@ -129,12 +133,21 @@ def main(setup: ExperimentSetup):
     scheduler = StepLR(optimizer, step_size=1, gamma=setup.params["gamma"])
 
     best_test_loss = 999
-    if setup.params["group"]:
-        metric = lambda y_pred, y_true, group: METRIC(y_pred, y_true) + metric_fairness_loss(y_pred, y_true, group)
+    if setup.params["group_lambda"]:
+        metric = lambda y_pred, y_true, group: METRIC(y_pred, y_true) + setup.params[
+            "group_lambda"
+        ] * metric_fairness_loss(y_pred, y_true, group)
     else:
         metric = lambda y_pred, y_true, group: METRIC(y_pred, y_true)
 
+    git_hash = (
+        subprocess.run(["git", "log", "-1", "--pretty=format:%H"], check=True, stdout=subprocess.PIPE)
+        .stdout.decode("utf-8")
+        .strip()
+    )
+
     with mlflow.start_run():
+        mlflow.log_param("git_hash", git_hash)
         try:
             log_params(setup.params)
 
