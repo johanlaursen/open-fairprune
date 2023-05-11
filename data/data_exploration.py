@@ -1,7 +1,9 @@
-import datawig
+import numpy as np
 import pandas as pd
+from sklearn.impute import SimpleImputer
 from sklearn.metrics import mean_squared_error as mse
 from sklearn.preprocessing import StandardScaler
+
 
 FLOAT_COLUMNS = [
     "Active_Loan",
@@ -16,7 +18,6 @@ FLOAT_COLUMNS = [
     "Client_Income",
     "Credit_Amount",
     "Credit_Bureau",
-    "Default",
     "Employed_Days",
     "Homephone_Tag",
     "House_Own",
@@ -24,14 +25,12 @@ FLOAT_COLUMNS = [
     "ID_Days",
     "Loan_Annuity",
     "Mobile_Tag",
-    "Own_House_Age",
     "Phone_Change",
     "Population_Region_Relative",
     "Registration_Days",
     "Score_Source_1",
     "Score_Source_2",
     "Score_Source_3",
-    "Social_Circle_Default",
     "Workphone_Working",
 ]
 
@@ -72,32 +71,12 @@ def main():
     X_train = train_df.drop(["Default"], axis=1)
 
     # Standardize float columns
-    TRAIN_FLOAT = list(set(FLOAT_COLUMNS) - set(["Default"]))
-    X_train[TRAIN_FLOAT] = StandardScaler().fit_transform(X_train[TRAIN_FLOAT])
+    X_train[FLOAT_COLUMNS] = StandardScaler().fit_transform(X_train[FLOAT_COLUMNS])
 
-    # 
-    for i, col in enumerate(TRAIN_FLOAT):
-        numerical_imputer = datawig.SimpleImputer(
-            input_columns=TRAIN_FLOAT,  # column(s) containing information about the column we want to impute
-            output_column=col,  # the column we'd like to impute values for
-            output_path=f"{col}_imputer_model",  # stores model data and metrics
-        )
+    imputed_df = X_train.copy()
 
-        numerical_imputer.fit(train_df=X_train)
-
-        imputed = numerical_imputer.predict(X_train)
-
-        # Get rows where Credit Bureau is not null
-        not_null = imputed[imputed[col].notnull()]
-
-        male_df = not_null[not_null["Client_Gender"] == "Male"]
-        female_df = not_null[not_null["Client_Gender"] == "Female"]
-
-        male_mse = mse(male_df[f"{col}_imputed"], male_df[col])
-        female_mse = mse(female_df[f"{col}_imputed"], female_df[col])
-        print(f"Finished column {i}/{len(TRAIN_FLOAT)-1}")
-        file.write(f"{col}:\nMale RMSE: {male_mse}\nFemale RMSE: {female_mse}\n")
-
+    imputer = SimpleImputer(strategy='median')
+    imputed_df[FLOAT_COLUMNS] = imputer.fit_transform(X_train[FLOAT_COLUMNS])
 
 if __name__ == "__main__":
     main()
