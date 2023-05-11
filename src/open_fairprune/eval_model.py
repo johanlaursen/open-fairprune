@@ -5,12 +5,9 @@ from lib2to3.pgen2.pgen import generate_grammar
 import numpy as np
 import pandas as pd
 import torch
-from torch.utils.data import DataLoader
-from torchmetrics import AUROC, Accuracy, F1Score, Recall, Specificity
-from torchmetrics.classification import BinaryAccuracy
+from torchmetrics import Accuracy, MatthewsCorrCoef, Recall, Specificity
 
 from open_fairprune.data_util import get_dataset, load_model
-from open_fairprune.train import metric
 
 
 class GroupScore(typing.NamedTuple):
@@ -25,7 +22,7 @@ class GroupScore(typing.NamedTuple):
 
 class GeneralMetrics(typing.NamedTuple):
     accuracy: GroupScore
-    f1: GroupScore
+    matthews: GroupScore
     tpr: GroupScore  # recall, sensitivity
     fpr: GroupScore  # 1 - specificity
     tnr: GroupScore  # Specificity
@@ -133,7 +130,7 @@ def get_general_metrics(y_pred, y_true, group, thresh=0.5) -> FairnessMetrics:
     kwargs = dict(task="binary", threshold=thresh)
     metrics = dict(  # order is important
         accuracy=Accuracy(**kwargs),
-        f1=F1Score(**kwargs),
+        matthews=MatthewsCorrCoef(**kwargs),
         tpr=Recall(**kwargs),
         fpr=lambda x, y: 1 - Specificity(**kwargs)(x, y),
         tnr=Specificity(**kwargs),
@@ -160,8 +157,8 @@ def ROC_curve(y_pred, y_true, group):
     data = []
     for threshold in range(1, 100, 1):
         metrics = get_general_metrics(y_pred, y_true, group, thresh=threshold / 100)
-        data.append((0, metrics.fpr.group0, metrics.tpr.group0, threshold / 100))
-        data.append((1, metrics.fpr.group1, metrics.tpr.group1, threshold / 100))
+        data.append(("g = 0", metrics.fpr.group0, metrics.tpr.group0, threshold / 100))
+        data.append(("g = 1", metrics.fpr.group1, metrics.tpr.group1, threshold / 100))
 
     df = pd.DataFrame(data, columns=["G", "fpr", "tpr", "thresh"])
     mid_df = df.query("thresh==0.5")
@@ -171,15 +168,21 @@ def ROC_curve(y_pred, y_true, group):
         x="fpr",
         y="tpr",
         hover_cols=["thresh"],
-        xlabel="False Positive Rate = Pr(S=1 | G=g, T=0)",
-        ylabel="True Positive Rate = Pr(S=1 | G=g, T=1)",
+        xlabel="FPR = Pr(S=1 | G=g, T=0)",
+        ylabel="TPR = Pr(S=1 | G=g, T=1)",
+        width=250,
+        height=250,
+        legend="bottom_right",
+        xticks=2,
+        yticks=2,
+        title="ROC Curve per group",
     )
     ROC_plot = df.hvplot(**kwargs) * df.hvplot.scatter(**kwargs)
-    mids = mid_df.hvplot.scatter(**kwargs, marker="square")
-    ROC_plot * mids
-
-    mids
-    return ROC_plot * mids
+    mids = mid_df.hvplot.scatter(**kwargs, size=100, marker="square")
+    plot = (ROC_plot * mids).opts(toolbar=None)
+    # hv.save(plot, "roc_curve.html")
+    # plot
+    return plot
 
 
 if __name__ == "__main__":
@@ -204,3 +207,5 @@ if __name__ == "__main__":
     fairprune_metrics = FairPruneMetrics.from_general_metrics(general_metrics)
     print()
     print(fairprune_metrics)
+
+    # ROC_curve(y_pred, y_true, group)
