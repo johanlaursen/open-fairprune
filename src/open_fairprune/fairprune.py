@@ -46,9 +46,19 @@ def fairprune(
     group[group == unprivileged_group] = 0
     group[group == privileged_group] = 1
 
-    data = data.to(device)
-    group = group.to(device)
-    target = target.to(device)
+    def sample_df(df):
+        return df.sample(10_000, replace=True, random_state=42)
+
+    # print("\n \n",data.dtype, group.dtype, target.dtype, "\n \n")
+    equal_df = (
+        pd.DataFrame(np.hstack([target.cpu()[:, None], data.cpu(), group.cpu()[:, None]])).groupby(0).apply(sample_df)
+    )
+    data, target, group = equal_df.iloc[:, 1:-1].values, equal_df.iloc[:, 0].values, equal_df.iloc[:, -1].values
+    # print("\n \n",data.dtype, group.dtype, target.dtype, "\n \n")
+    data = torch.tensor(data, dtype=torch.float32)
+    target = torch.tensor(target, dtype=torch.int64)
+    group = torch.tensor(group, dtype=torch.int64)
+    assert sum(target) == 10000
 
     one_indices = torch.nonzero(group == 1, as_tuple=False).squeeze(1)
     zero_indices = torch.nonzero(group == 0, as_tuple=False).squeeze(1)
@@ -127,8 +137,10 @@ def get_parameter_salience(model_extend, metric_extend, data, target, saliency_d
 def hyperparameter_search_fairprune(RUNID, device, lossfunc):
     """Hyperparameter search for fairprune to reproduce ablation study from paper"""
     betas = [0.1, 0.3, 0.5, 0.7, 0.9]
-    prune_ratios = np.linspace(0, 1, 11)
-    prune_ratios = np.insert(prune_ratios, np.searchsorted(prune_ratios, 0.35), 0.35)
+    # prune_ratios = np.linspace(0, 0.001, 11)
+    prune_ratios = np.linspace(0, 0.1, 11)
+
+    # prune_ratios = np.insert(prune_ratios, np.searchsorted(prune_ratios, 0.35), 0.35)
     data, group, y_true = get_dataset("dev")
     train = get_dataset("train")
     data_recall = {
@@ -146,6 +158,8 @@ def hyperparameter_search_fairprune(RUNID, device, lossfunc):
             eodd = []
             for prune_ratio in prune_ratios:
                 model = load_model(id=RUN_ID)
+                model.eval()
+
                 model_pruned = fairprune(
                     model=model,
                     metric=lossfunc,
@@ -156,6 +170,7 @@ def hyperparameter_search_fairprune(RUNID, device, lossfunc):
                     privileged_group=1,
                     unprivileged_group=0,
                 )
+                model_pruned.eval()
                 with torch.no_grad():
                     y_pred = model_pruned(data.to("cuda")).softmax(dim=1).detach().cpu()
 
@@ -174,20 +189,20 @@ def hyperparameter_search_fairprune(RUNID, device, lossfunc):
         print("df_data_recall: ", df_data_recall)
         print(eopp1)
         print(matthews_scores)
-        fig = plt.figure(figsize=(10, 10))
+        fig = plt.figure(figsize=(6, 6))
         for key in data_recall.keys():
             if "Beta" in key:
                 sns.lineplot(data=df_data_recall, x="prune_ratio", y=key, label=key, marker="o")
         plt.ylabel("Recall")
         mlflow.log_figure(fig, f"fairprune_hyperparameter_search_recall.png")
-        fig = plt.figure(figsize=(10, 10))
+        fig = plt.figure(figsize=(6, 6))
         for key in data_eodd.keys():
             if "Beta" in key:
                 sns.lineplot(data=df_data_eodd, x="prune_ratio", y=key, label=key, marker="o")
         plt.ylabel("EOdd")
         mlflow.log_figure(fig, f"fairprune_hyperparameter_search_eodd.png")
 
-        fig = plt.figure(figsize=(10, 10))
+        fig = plt.figure(figsize=(6, 6))
         data_mcc_eopp1[f"eopp1"] = eopp1
         data_mcc_eopp1[f"matthews"] = matthews_scores
         df_f1_eopp1 = pd.DataFrame(data_mcc_eopp1)
@@ -200,7 +215,7 @@ def hyperparameter_search_fairprune(RUNID, device, lossfunc):
 if __name__ == "__main__":
     prune_ratio = 0.001
     beta = 0.3
-    hyperparameter_search = False
+    hyperparameter_search = True
     RUN_ID = "latest"  # latest
     device = torch.device("cuda")
     lossfunc = nn.CrossEntropyLoss()
@@ -238,6 +253,7 @@ if __name__ == "__main__":
 
         for model, suffix in [(model, "pre"), (model_pruned, "post")]:
             with torch.no_grad():
+                model.eval()
                 y_pred = model(data.to("cuda")).softmax(dim=1).detach().cpu()
 
             general_metrics = get_general_metrics(y_pred, y_true, group)
