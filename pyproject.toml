@@ -22,7 +22,9 @@ dependencies = [
   "scikit-learn",
   "pandas",
   "holoviews",
-  "hvplot"
+  "hvplot",
+  "ipywidgets",
+  "shap"
 ]
 
 [tool.black]
