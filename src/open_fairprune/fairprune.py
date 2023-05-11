@@ -75,14 +75,17 @@ def fairprune(
     #         param.flatten()[topk_indices] = 0
 
     # Prune
-    all_params = torch.cat([param.data.view(-1) for param in model.parameters()])
+    all_params = torch.cat([param.data.view(-1) for name, param in model.named_parameters() if "bias" not in name])
     k = int(prune_ratio * all_params.numel())
-    all_saliency = torch.cat([saliency.data.view(-1) for saliency in saliency_diff_dict.values()])
+    all_saliency = torch.cat(
+        [saliency.data.view(-1) for name, saliency in saliency_diff_dict.items() if "bias" not in name]
+    )
     topk_indices = torch.topk(all_saliency, k).indices
     all_params[topk_indices] = 0
     param_index = 0
-    for param in model.parameters():
-        if param.requires_grad:
+    for name, param in model.named_parameters():
+        # Note: bias is not pruned so explicitly avoiding
+        if "bias" not in name:
             num_params = param.numel()
             param.data = all_params[param_index : param_index + num_params].view(param.size())
             param_index += num_params
@@ -94,9 +97,18 @@ def fairprune(
             num_zeros += torch.sum(param.data == 0).item()
             num_elems += param.numel()
         print(" --------- Pruning Verification ---------")
-        print("number of zeros: ", num_zeros, " out of ", num_elems, " parameters")
+        print("number of total zeros: ", num_zeros, " out of ", num_elems, " parameters")
         print(" ----------------------------------------")
 
+        for (name, saliency), (_, param) in zip(saliency_diff_dict.items(), model.named_parameters()):
+            mean = round(torch.mean(saliency).item(), 5)
+            std = round(torch.std(saliency).item(), 5)
+            min_value = torch.min(saliency).item()
+            max_value = torch.max(saliency).item()
+            print(f"{name}, mean:{mean} std:{std}, number of parameters: {saliency.numel()}")
+            print(f"num of zeros: {torch.sum(param == 0).item()} out of {param.numel()}")
+            print(f"min: {min_value}, max: {max_value}")
+        print(" ----------------------------------------")
     return model
 
 
@@ -130,10 +142,10 @@ def hyperparameter_search_fairprune(RUNID, device, lossfunc):
         matthews_scores = []
         eopp1 = []
         for beta in betas:
-            model = load_model(id=RUN_ID)
             recall_scores = []
             eodd = []
             for prune_ratio in prune_ratios:
+                model = load_model(id=RUN_ID)
                 model_pruned = fairprune(
                     model=model,
                     metric=lossfunc,
@@ -186,7 +198,7 @@ def hyperparameter_search_fairprune(RUNID, device, lossfunc):
 
 
 if __name__ == "__main__":
-    prune_ratio = 0.5
+    prune_ratio = 0.001
     beta = 0.3
     hyperparameter_search = False
     RUN_ID = "latest"  # latest
@@ -194,6 +206,7 @@ if __name__ == "__main__":
     lossfunc = nn.CrossEntropyLoss()
 
     model, RUN_ID = load_model(id=RUN_ID, return_run_id=True)
+    print("RUN_ID: ", RUN_ID)
     client = mlflow.MlflowClient()
     setup = client.get_run(RUN_ID).to_dictionary()["data"]["params"]
 
@@ -214,12 +227,14 @@ if __name__ == "__main__":
             beta=beta,
             privileged_group=1,
             unprivileged_group=0,
+            verbose=True,
         )
 
     with mlflow.start_run(RUN_ID):
         mlflow.pytorch.log_model(model_pruned, f"fairpruned_model_{prune_ratio}_{beta}")
 
         data, group, y_true = get_dataset("dev")
+        model, RUN_ID = load_model(id=RUN_ID, return_run_id=True)  # reload to avoid overwriting
 
         for model, suffix in [(model, "pre"), (model_pruned, "post")]:
             with torch.no_grad():
@@ -236,5 +251,6 @@ if __name__ == "__main__":
             mlflow.log_metrics(
                 {f"{key}_{suffix}": value.total.item() for key, value in zip(general_metrics._fields, general_metrics)}
             )
+            print(f" Fairprune metrics for {suffix} pruning: ")
             print(fairness_metrics)
             print(general_metrics)
