@@ -12,7 +12,7 @@ import torch
 from click import FLOAT
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from torch.utils.data.dataloader import DataLoader, Dataset
 
 import open_fairprune as this
@@ -20,30 +20,20 @@ import open_fairprune as this
 root = Path(this.__path__[0]).parents[1]
 DATA_PATH = root / "data"
 
-INPUT_SIZE = 27
+INPUT_SIZE = 204
 
 
-FLOAT_COLUMNS = [
-    "Active_Loan",
+ORDINAL_COLUMNS = [
     "Age_Days",
-    "Application_Process_Day",
-    "Application_Process_Hour",
-    "Bike_Owned",
-    "Car_Owned",
     "Child_Count",
     "Cleint_City_Rating",
     "Client_Family_Members",
     "Client_Income",
     "Credit_Amount",
-    "Credit_Bureau",
-    "Default",
     "Employed_Days",
-    "Homephone_Tag",
-    "House_Own",
     "ID",
     "ID_Days",
     "Loan_Annuity",
-    "Mobile_Tag",
     "Own_House_Age",
     "Phone_Change",
     "Population_Region_Relative",
@@ -52,31 +42,32 @@ FLOAT_COLUMNS = [
     "Score_Source_2",
     "Score_Source_3",
     "Social_Circle_Default",
-    "Workphone_Working",
 ]
+
 
 CATEGORICAL = [
     "Accompany_Client",
     "Active_Loan",
+    "Application_Process_Day",
+    "Application_Process_Hour",
     "Bike_Owned",
     "Car_Owned",
     "Child_Count",
     "Cleint_City_Rating",
     "Client_Contact_Work_Tag",
     "Client_Education",
-    "Client_Family_Members",
     "Client_Gender",
     "Client_Housing_Type",
     "Client_Income_Type",
     "Client_Marital_Status",
     "Client_Occupation",
     "Client_Permanent_Match_Tag",
+    "Credit_Bureau",
     "G",
-    "Homephone_Tag",
     "Homephone_Tag",
     "House_Own",
     "Loan_Contract_Type",
-    "Population_Region_Relative",
+    "Mobile_Tag",
     "T",
     "Type_Organization",
     "Workphone_Working",
@@ -106,7 +97,7 @@ def load_model(id: str = "latest", model_name: str = "model", return_run_id=Fals
 
 
 def get_split_df(split="train"):
-    df = pd.read_csv(DATA_PATH / "Train_Dataset.csv")
+    df = pd.read_csv(DATA_PATH / "Train_Dataset.csv", low_memory=False)
     splits = {
         "train": df.ID % 7 <= 4,
         "dev": df.ID % 7 == 5,
@@ -121,8 +112,8 @@ def get_split_df(split="train"):
         except:
             return False
 
-    df.loc[:, FLOAT_COLUMNS] = df[FLOAT_COLUMNS][df[FLOAT_COLUMNS].applymap(isfloat)]
-    df = df.astype({c: "float" for c in FLOAT_COLUMNS})
+    df.loc[:, ORDINAL_COLUMNS] = df[ORDINAL_COLUMNS][df[ORDINAL_COLUMNS].applymap(isfloat)]
+    df = df.astype({c: "float" for c in ORDINAL_COLUMNS})
 
     df = df.dropna(subset="Age_Days")  # NOTE: Drops where we dont have label!
     df["T"] = df.Default.astype(bool)
@@ -142,6 +133,7 @@ class LoanDataset(Dataset):
     ):
         self.transform = transform
         self.returns = returns
+
         df = get_split_df(split)
         train_df = get_split_df("train")
         # df.Default.value_counts()  # 0=80009, 1=7031, 11:1 ratio
@@ -156,34 +148,48 @@ class LoanDataset(Dataset):
         self.group = torch.tensor(df.G.to_numpy(), dtype=torch.long)
         df = df.drop(columns=["T", "G"])
 
-        cols_b4 = len(df.columns)
-        df = df.select_dtypes(include=[np.number, bool]).astype(float)
-        cols_after = len(df.columns)
-        print(f"Dropped {cols_b4 - cols_after} columns: {df.shape = }")
-
-        df['Accompany_Client'] = df['Accompany_Client'].replace('##', np.nan)
+        df["Accompany_Client"] = df["Accompany_Client"].replace("##", np.nan)
 
         # Dropping columns with more than 50% missing values (except score sources)
         df = df.drop(["Own_House_Age", "Social_Circle_Default"], axis=1)
 
-        # We want a job category unknown, instead of the most common
-        df["Client_Occupation"] = df["Client_Occupation"].fillna("Unknown")
+        # # We want a job category unknown, instead of the most common
+        # df["Client_Occupation"] = df["Client_Occupation"].fillna("Unknown")
 
-        categorical_imputer = SimpleImputer(strategy='most_frequent').fit(train_df[CATEGORICAL])
-        df1 = categorical_imputer.transform(df[CATEGORICAL])
-        numerical_imputer = SimpleImputer(strategy='median').fit(train_df[FLOAT_COLUMNS])
-        df2 = numerical_imputer.transform(df[FLOAT_COLUMNS])
-        df = pd.concat([df1, df2], axis=1)
+        def get_cat(df):
+            CAT = list(set(CATEGORICAL) - {"G", "T"})
+            return (
+                OneHotEncoder(sparse_output=False, handle_unknown="ignore", drop="first")
+                .set_output(transform="pandas")
+                .fit(train_df[CAT])
+                .transform(
+                    SimpleImputer(strategy="most_frequent")
+                    .set_output(transform="pandas")
+                    .fit(train_df[CAT])
+                    .transform(df[CAT])
+                )
+            )
 
-        pipe = make_pipeline(StandardScaler()).set_output(transform="pandas")
+        def get_ordinal(df):
+            ordinal = list(set(ORDINAL_COLUMNS) - {"Age_Days", "Own_House_Age", "Social_Circle_Default"})
+            return (
+                SimpleImputer(strategy="median")
+                .set_output(transform="pandas")
+                .fit(train_df[ordinal])
+                .transform(df[ordinal])
+            )
 
-        df = pipe.fit_transform(df)
-        df = df.astype("float32")
+        df = pd.concat([get_cat(df), get_ordinal(df)], axis=1)
+        train_df = pd.concat([get_cat(train_df), get_ordinal(train_df)], axis=1)
+        df = StandardScaler().set_output(transform="pandas").fit(train_df).transform(df).astype("float32")
+
         self.df = df
 
         self.fuck_your_ram = fuck_your_ram  # Load this many samples into memory
         self._gigacache = {}
-        assert len(self.df.columns) == INPUT_SIZE, f"Please update training data feature size: {INPUT_SIZE = }"
+        assert (
+            len(self.df.columns) == INPUT_SIZE
+        ), f"Please update training data feature size: {INPUT_SIZE = } to {len(self.df.columns) = }"
 
     def __len__(self):
         return len(self.df)
