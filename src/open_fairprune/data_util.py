@@ -74,6 +74,7 @@ CATEGORICAL = [
     "Client_Marital_Status",
     "Client_Occupation",
     "Client_Permanent_Match_Tag",
+    "G",
     "Homephone_Tag",
     "Homephone_Tag",
     "House_Own",
@@ -145,7 +146,7 @@ class LoanDataset(Dataset):
         self.transform = transform
         self.returns = returns
         df = get_split_df(split)
-
+        train_df = get_split_df("train")
         # df.Default.value_counts()  # 0=80009, 1=7031, 11:1 ratio
         # df.Client_Gender.value_counts()  # Male=56070, Female=29263, XNA=2, M:F ratio=2:1
 
@@ -163,7 +164,21 @@ class LoanDataset(Dataset):
         cols_after = len(df.columns)
         print(f"Dropped {cols_b4 - cols_after} columns: {df.shape = }")
 
-        pipe = make_pipeline(SimpleImputer(), StandardScaler()).set_output(transform="pandas")
+        df['Accompany_Client'] = df['Accompany_Client'].replace('##', np.nan)
+
+        # Dropping columns with more than 50% missing values (except score sources)
+        df = df.drop(["Own_House_Age", "Social_Circle_Default"], axis=1)
+
+        # We want a job category unknown, instead of the most common
+        df["Client_Occupation"] = df["Client_Occupation"].fillna("Unknown")
+
+        categorical_imputer = SimpleImputer(strategy='most_frequent').fit(train_df[CATEGORICAL])
+        df1 = categorical_imputer.transform(df[CATEGORICAL])
+        numerical_imputer = SimpleImputer(strategy='median').fit(train_df[FLOAT_COLUMNS])
+        df2 = numerical_imputer.transform(df[FLOAT_COLUMNS])
+        df = pd.concat([df1, df2], axis=1)
+
+        pipe = make_pipeline(StandardScaler()).set_output(transform="pandas")
 
         df = pipe.fit_transform(df)
         df = df.astype("float32")
