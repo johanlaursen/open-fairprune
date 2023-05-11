@@ -34,104 +34,64 @@ def fairprune(
         privileged_group: privileged group idx in group tensor
         unprivileged_group: unprivileged group idx in group tensor
     """
-
     model_extend = extend(model).to(device)
     metric_extend = extend(metric).to(device)
 
-    saliency_0_dict = {name: torch.zeros_like(param) for name, param in model.named_parameters()}
-    saliency_1_dict = {name: torch.zeros_like(param) for name, param in model.named_parameters()}
-
-    (data, group, target) = train_dataset
+    (data, group, target) = [x.to(device) for x in train_dataset]
     # Explicitely set unprivileged and privileged group to 0 and 1
-    group[group == unprivileged_group] = 0
-    group[group == privileged_group] = 1
+    g0 = group == unprivileged_group
+    g1 = group == privileged_group
 
-    def sample_df(df):
-        return df.sample(10_000, replace=True, random_state=42)
+    h0, θ = get_parameter_salience(model_extend, metric_extend, data[g0], target[g0])
+    h1, θ = get_parameter_salience(model_extend, metric_extend, data[g1], target[g1])
 
-    # print("\n \n",data.dtype, group.dtype, target.dtype, "\n \n")
-    equal_df = (
-        pd.DataFrame(np.hstack([target.cpu()[:, None], data.cpu(), group.cpu()[:, None]])).groupby(0).apply(sample_df)
-    )
-    data, target, group = equal_df.iloc[:, 1:-1].values, equal_df.iloc[:, 0].values, equal_df.iloc[:, -1].values
-    # print("\n \n",data.dtype, group.dtype, target.dtype, "\n \n")
-    data = torch.tensor(data, dtype=torch.float32)
-    target = torch.tensor(target, dtype=torch.int64)
-    group = torch.tensor(group, dtype=torch.int64)
-    assert sum(target) == 10000
+    saliency = 1 / 2 * θ**2 * (h0 - beta * h1)
 
-    one_indices = torch.nonzero(group == 1, as_tuple=False).squeeze(1)
-    zero_indices = torch.nonzero(group == 0, as_tuple=False).squeeze(1)
-    data_0 = torch.index_select(data, 0, zero_indices).to(device)
-    data_1 = torch.index_select(data, 0, one_indices).to(device)
-    target_0 = torch.index_select(target, 0, zero_indices).to(device)
-    target_1 = torch.index_select(target, 0, one_indices).to(device)
+    k = int(prune_ratio * len(θ))
+    topk_indices = torch.topk(saliency, k).indices
+    θ[topk_indices] = 0
 
-    saliency_0_dict = get_parameter_salience(model_extend, metric_extend, data_0, target_0, saliency_0_dict)
-    saliency_1_dict = get_parameter_salience(model_extend, metric_extend, data_1, target_1, saliency_1_dict)
-
-    # get difference in saliency for each parameter
-    saliency_diff_dict = {
-        name: param_0 - beta * param_1
-        for (name, param_0), (_, param_1) in zip(saliency_0_dict.items(), saliency_1_dict.items())
-    }
-
-    # Prune by layer
-    # with torch.no_grad():
-    #     for (name, saliency), (_, param) in zip(saliency_diff_dict.items(), model.named_parameters()):
-    #         k = int(prune_ratio * param.numel())
-    #         saliency_flat = saliency.flatten()
-    #         topk_indices = torch.topk(saliency_flat, k).indices
-    #         param.flatten()[topk_indices] = 0
-
-    # Prune
-    all_params = torch.cat([param.data.view(-1) for name, param in model.named_parameters() if "bias" not in name])
-    k = int(prune_ratio * all_params.numel())
-    all_saliency = torch.cat(
-        [saliency.data.view(-1) for name, saliency in saliency_diff_dict.items() if "bias" not in name]
-    )
-    topk_indices = torch.topk(all_saliency, k).indices
-    all_params[topk_indices] = 0
-    param_index = 0
+    param_index = n_pruned = n_param = 0
     for name, param in model.named_parameters():
         # Note: bias is not pruned so explicitly avoiding
-        if "bias" not in name:
-            num_params = param.numel()
-            param.data = all_params[param_index : param_index + num_params].view(param.size())
-            param_index += num_params
+        if "bias" in name:
+            continue
+        num_params = param.numel()
+        layer_saliency = θ[param_index : param_index + num_params].view(param.size())
+        param.data = layer_saliency
+        param_index += num_params
+
+        if verbose:
+            n_pruned += torch.sum(param.data == 0).item()
+            n_param += num_params
+            mean = round(torch.mean(layer_saliency).item(), 5)
+            std = round(torch.std(layer_saliency).item(), 5)
+            min_value = torch.min(layer_saliency).item()
+            max_value = torch.max(layer_saliency).item()
+            n_positive_predictions = model(data[g0]).softmax(dim=1).argmax(axis=1).sum()
+            print(f"{name = } {mean = } {std = } {num_params = }")
+            print(f"num of zeros: {torch.sum(param == 0).item()} / {num_params}")
+            print(f"{min_value = } {max_value = } {n_positive_predictions = }")
+            print(" ----------------------------------------")
 
     if verbose:
-        num_zeros = 0
-        num_elems = 0
-        for param in model.parameters():
-            num_zeros += torch.sum(param.data == 0).item()
-            num_elems += param.numel()
         print(" --------- Pruning Verification ---------")
-        print("number of total zeros: ", num_zeros, " out of ", num_elems, " parameters")
+        print("number of total zeros: ", n_pruned, " out of ", n_param, " parameters")
         print(" ----------------------------------------")
 
-        for (name, saliency), (_, param) in zip(saliency_diff_dict.items(), model.named_parameters()):
-            mean = round(torch.mean(saliency).item(), 5)
-            std = round(torch.std(saliency).item(), 5)
-            min_value = torch.min(saliency).item()
-            max_value = torch.max(saliency).item()
-            print(f"{name}, mean:{mean} std:{std}, number of parameters: {saliency.numel()}")
-            print(f"num of zeros: {torch.sum(param == 0).item()} out of {param.numel()}")
-            print(f"min: {min_value}, max: {max_value}")
-        print(" ----------------------------------------")
     return model
 
 
-def get_parameter_salience(model_extend, metric_extend, data, target, saliency_dict):
+def get_parameter_salience(model_extend, metric_extend, data, target):
     output = model_extend(data)
-    loss = metric_extend(output.squeeze(), target)
+    loss = metric_extend(output, target)
     with backpack(DiagHessian()):
         loss.backward()
 
-    for name, param in model_extend.named_parameters():
-        saliency_dict[name] += param.diag_h * torch.square(param)
+    h = torch.cat([param.diag_h.flatten() for param in model_extend.parameters()])
+    θ = torch.cat([param.flatten() for param in model_extend.parameters()])
 
-    return saliency_dict
+    return h, θ
 
 
 def hyperparameter_search_fairprune(RUNID, device, lossfunc):
@@ -216,7 +176,7 @@ if __name__ == "__main__":
     prune_ratio = 0.001
     beta = 0.3
     hyperparameter_search = True
-    RUN_ID = "latest"  # latest
+    RUN_ID = "2499dc185c2747209b3ee1dd30cd57d0"  # latest
     device = torch.device("cuda")
     lossfunc = nn.CrossEntropyLoss()
 
