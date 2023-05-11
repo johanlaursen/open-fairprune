@@ -124,7 +124,7 @@ def get_split_df(split="train"):
 
     df = df.dropna(subset="Age_Days")  # NOTE: Drops where we dont have label!
     df["T"] = df.Default.astype(bool)
-    df["G"] = df.Age_Days.astype(int) // 365 > 30
+    df["G"] = df.Age_Days.astype(int) // 365 > 43
     df = df.drop(columns=["Default", "Age_Days"])
     return df
 
