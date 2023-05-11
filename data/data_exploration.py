@@ -58,12 +58,11 @@ def main():
     # Null values in each column and percentage missing:
     print((train_df.isnull().sum() / len(train_df)).sort_values(ascending=False))
 
-    # Dropping everything with more than 50% missing values and score source 3
-    # train_df = train_df.dropna(thresh=len(train_df) / 2, axis=1)
-    # df = df.drop(['Score_Source_3'], axis=1)
+    # Dropping everything with more than 50% missing values except score sources
+    train_df = train_df.drop(["Own_House_Age", "Social_Circle_Default"], axis=1)
 
-    # Replacing nan values in Client Occupation with 'nan'
-    train_df["Client_Occupation"] = train_df["Client_Occupation"].fillna("nan")
+    # Replacing nan values in Client Occupation with 'Unknown'
+    train_df["Client_Occupation"] = train_df["Client_Occupation"].fillna("Unknown")
     print(train_df["Client_Occupation"].value_counts())
 
     # logarithmic histplot of Client_Income
@@ -76,43 +75,31 @@ def main():
     TRAIN_FLOAT = list(set(FLOAT_COLUMNS) - set(["Default"]))
     X_train[TRAIN_FLOAT] = StandardScaler().fit_transform(X_train[TRAIN_FLOAT])
 
-    # Write down mse to a file
-    with open("mse.txt", "w") as file:
-        for i, col in enumerate(TRAIN_FLOAT):
-            numerical_imputer = datawig.SimpleImputer(
-                input_columns=TRAIN_FLOAT,  # column(s) containing information about the column we want to impute
-                output_column=col,  # the column we'd like to impute values for
-                output_path=f"{col}_imputer_model",  # stores model data and metrics
-            )
+    # 
+    for i, col in enumerate(TRAIN_FLOAT):
+        numerical_imputer = datawig.SimpleImputer(
+            input_columns=TRAIN_FLOAT,  # column(s) containing information about the column we want to impute
+            output_column=col,  # the column we'd like to impute values for
+            output_path=f"{col}_imputer_model",  # stores model data and metrics
+        )
 
-            numerical_imputer.fit(train_df=X_train)
+        numerical_imputer.fit(train_df=X_train)
 
-            imputed = numerical_imputer.predict(X_train)
+        imputed = numerical_imputer.predict(X_train)
 
-            # Get rows where Credit Bureau is not null
-            not_null = imputed[imputed[col].notnull()]
+        # Get rows where Credit Bureau is not null
+        not_null = imputed[imputed[col].notnull()]
 
-            male_df = not_null[not_null["Client_Gender"] == "Male"]
-            female_df = not_null[not_null["Client_Gender"] == "Female"]
+        male_df = not_null[not_null["Client_Gender"] == "Male"]
+        female_df = not_null[not_null["Client_Gender"] == "Female"]
 
-            male_mse = mse(male_df[f"{col}_imputed"], male_df[col])
-            female_mse = mse(female_df[f"{col}_imputed"], female_df[col])
-            print(f"Finished column {i}/{len(TRAIN_FLOAT)-1}")
-            file.write(f"{col}:\nMale RMSE: {male_mse}\nFemale RMSE: {female_mse}\n")
+        male_mse = mse(male_df[f"{col}_imputed"], male_df[col])
+        female_mse = mse(female_df[f"{col}_imputed"], female_df[col])
+        print(f"Finished column {i}/{len(TRAIN_FLOAT)-1}")
+        file.write(f"{col}:\nMale RMSE: {male_mse}\nFemale RMSE: {female_mse}\n")
 
 
 if __name__ == "__main__":
     main()
 
-"""categorical_columns = ['Accompany_Client', 'Client_Income_Type', 'Client_Education', 'Client_Marital_Status', 'Client_Gender', 'Loan_Contract_Type', 'Client_Housing_Type', 'Client_Occupation', 'Client_Permanent_Match_Tag', 'Client_Contact_Work_Tag', 'Type_Organization']
-
-categorical_imputer = datawig.SimpleImputer(
-    input_columns=categorical_columns, # column(s) containing information about the column we want to impute
-    output_column='Loan_Contract_Type', # the column we'd like to impute values for
-    output_path = 'categorical_imputer_model' # stores model data and metrics
-    )
-
-categorical_imputer.fit(train_df=X_train)
-
-categorical_imputed = categorical_imputer.predict(X_train)
-"""
+#categorical_columns = ['Accompany_Client', 'Client_Income_Type', 'Client_Education', 'Client_Marital_Status', 'Client_Gender', 'Loan_Contract_Type', 'Client_Housing_Type', 'Client_Occupation', 'Client_Permanent_Match_Tag', 'Client_Contact_Work_Tag', 'Type_Organization']
