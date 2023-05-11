@@ -161,6 +161,14 @@ class LoanDataset(Dataset):
         cols_after = len(df.columns)
         print(f"Dropped {cols_b4 - cols_after} columns: {df.shape = }")
 
+        df['Accompany_Client'] = df['Accompany_Client'].replace('##', np.nan)
+
+        # Dropping columns with more than 50% missing values (except score sources)
+        df = df.drop(["Own_House_Age", "Social_Circle_Default"], axis=1)
+
+        # We want a job category unknown, instead of the most common
+        df["Client_Occupation"] = df["Client_Occupation"].fillna("Unknown")
+
         categorical_imputer = SimpleImputer(strategy='most_frequent').fit(train_df[CATEGORICAL])
         df1 = categorical_imputer.transform(df[CATEGORICAL])
         numerical_imputer = SimpleImputer(strategy='median').fit(train_df[FLOAT_COLUMNS])
