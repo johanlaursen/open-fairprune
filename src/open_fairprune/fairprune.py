@@ -1,4 +1,5 @@
 import mlflow
+import numpy as np
 import torch
 import torch.nn as nn
 from backpack import backpack, extend
@@ -11,7 +12,6 @@ from open_fairprune.eval_model import (
     get_fairness_metrics,
     get_general_metrics,
 )
-from open_fairprune.train import metric
 
 metric = nn.CrossEntropyLoss()
 
@@ -84,12 +84,46 @@ def get_parameter_salience(model_extend, metric_extend, data, target, saliency_d
     return saliency_dict
 
 
+def hyperparameter_search_fairprune(model, RUNID, device, lossfunc):
+    betas = [0.1, 0.3, 0.5, 0.7, 0.9, 1]
+    prune_ratios = np.linspace(0, 1, 11)
+    data, group, y_true = get_dataset("dev")
+    train = get_dataset("train")
+
+    with mlflow.start_run(run_name=f"fairprune_hyperparameter_search_{RUNID}"):
+        for beta in betas:
+            for prune_ratio in prune_ratios:
+                model_pruned = fairprune(
+                    model=model,
+                    metric=lossfunc,
+                    train_dataset=train,
+                    device=device,
+                    prune_ratio=prune_ratio,
+                    beta=beta,
+                    privileged_group=1,
+                    unprivileged_group=0,
+                )
+                with torch.no_grad():
+                    y_pred = model_pruned(data.to("cuda")).softmax(dim=1).detach().cpu()
+
+                general_metrics = get_general_metrics(y_pred, y_true, group)
+                fairprune_metrics = FairPruneMetrics.from_general_metrics(general_metrics)
+                mlflow.log_metrics(
+                    {
+                        f"{beta}_{prune_ratio}_{key}": value.item()
+                        for key, value in zip(fairprune_metrics._fields, fairprune_metrics)
+                    }
+                )
+        # fairness_metrics = get_fairness_metrics(y_pred, y_true, group)
+
+
 if __name__ == "__main__":
     prune_ratio = 0.5
     beta = 0.3
+    hyperparameter_search = True
 
     device = torch.device("cuda")
-    lossfunc = metric
+    lossfunc = nn.CrossEntropyLoss()
 
     model, RUN_ID = load_model(return_run_id=True)
     client = mlflow.MlflowClient()
@@ -98,25 +132,10 @@ if __name__ == "__main__":
     dev = get_dataset("dev")
     train = get_dataset("train")
 
-    data_kwargs = {
-        # "num_workers": 4,
-        "pin_memory": True,
-        "shuffle": True,  # Only done once for entire run
-        "batch_size": int(setup["batch_size"]),
-        "drop_last": True,  # Drop last batch if it's not full
-    }
-
-    train_loader, dev_loader = [
-        DataLoader(
-            LoanDataset(
-                split="train",
-                returns=["data", "group", "label"],
-            ),
-            **data_kwargs,
-        )
-        for split in ["train", "dev"]
-    ]
-
+    if hyperparameter_search:
+        with timeit("hyperparameter_search"):
+            hyperparameter_search_fairprune(model, RUNID=RUN_ID, device=device, lossfunc=lossfunc)
+        exit()
     with timeit("fairprune"):
         model_pruned = fairprune(
             model=model,
@@ -127,7 +146,6 @@ if __name__ == "__main__":
             beta=beta,
             privileged_group=1,
             unprivileged_group=0,
-            num_of_batches=5,
         )
 
     with mlflow.start_run(RUN_ID):
