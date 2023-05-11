@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader
 
 from open_fairprune import simple_nn
 from open_fairprune.data_util import LoanDataset, get_git_hash, load_model
+from open_fairprune.eval_model import get_all_metrics
 from open_fairprune.simple_nn import MODEL_NAME
 
 torch.manual_seed(42)
@@ -87,6 +88,7 @@ def test(model, device, test_loader, epoch, metric):
             test_loss += metric(output, target, group)
             correct += (output.argmax(axis=1) == target).sum()
             total += len(target)
+            get_all_metrics(output, target, group, log_mlflow_w_suffix="_dev")
 
     print(f"Test Epoch {epoch}: Avg loss: {(test_loss / len(test_loader)):.4f}, Avg accuracy = {correct / total:.4f}")
     return test_loss / len(test_loader)
@@ -100,9 +102,9 @@ def metric_fairness_loss(output, target, group):
 
     assert len(y_trues) == len(target[g0]) * len(target[g1]), f"{len(y_trues)} != {len(target[g0]) * len(target[g1])}"
 
-    individual_fairness = (y_trues[:, 0] == y_trues[:, 1]) * (y_preds[:, 0] - y_preds[:, 1])
-    group_fairness = individual_fairness.sum() ** 2
-    return group_fairness
+    probability_differences = (y_trues[:, 0] == y_trues[:, 1]) * (y_preds[:, 0] - y_preds[:, 1])
+    individual_fairness = (probability_differences**2).mean()
+    return individual_fairness
 
 
 def main(setup: ExperimentSetup):
