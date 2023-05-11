@@ -19,7 +19,7 @@ import open_fairprune as this
 root = Path(this.__path__[0]).parents[1]
 DATA_PATH = root / "data"
 
-INPUT_SIZE = 29
+INPUT_SIZE = 27
 
 
 FLOAT_COLUMNS = [
@@ -152,6 +152,7 @@ class LoanDataset(Dataset):
 
         self.target = torch.tensor(df["T"].to_numpy(), dtype=torch.long)
         self.group = torch.tensor(df.G.to_numpy(), dtype=torch.long)
+        df = df.drop(columns=["T", "G"])
 
         cols_b4 = len(df.columns)
         df = df.select_dtypes(include=[np.number, bool]).astype(float)
