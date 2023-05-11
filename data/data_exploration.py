@@ -34,6 +34,18 @@ FLOAT_COLUMNS = [
     "Workphone_Working",
 ]
 
+CATEGORICAL_COLUMNS = [
+    'Accompany_Client', 
+    'Client_Income_Type', 
+    'Client_Education', 
+    'Client_Marital_Status', 
+    'Client_Gender', 
+    'Loan_Contract_Type', 
+    'Client_Housing_Type', 
+    'Client_Occupation', 
+    'Client_Permanent_Match_Tag', 
+    'Client_Contact_Work_Tag', 
+    'Type_Organization']
 
 def main():
     df = pd.read_csv("Train_Dataset.csv")
@@ -75,10 +87,11 @@ def main():
 
     imputed_df = X_train.copy()
 
-    imputer = SimpleImputer(strategy='median')
-    imputed_df[FLOAT_COLUMNS] = imputer.fit_transform(X_train[FLOAT_COLUMNS])
+    numerical_imputer = SimpleImputer(strategy='median')
+    imputed_df[FLOAT_COLUMNS] = numerical_imputer.fit_transform(X_train[FLOAT_COLUMNS])
+
+    categorical_imputer = SimpleImputer(strategy='most_frequent')
+    imputed_df[CATEGORICAL_COLUMNS] = categorical_imputer.fit_transform(X_train[CATEGORICAL_COLUMNS])
 
 if __name__ == "__main__":
     main()
-
-#categorical_columns = ['Accompany_Client', 'Client_Income_Type', 'Client_Education', 'Client_Marital_Status', 'Client_Gender', 'Loan_Contract_Type', 'Client_Housing_Type', 'Client_Occupation', 'Client_Permanent_Match_Tag', 'Client_Contact_Work_Tag', 'Type_Organization']
