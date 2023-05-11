@@ -80,17 +80,17 @@ def train(model, device, train_loader, optimizer, metric):
 
 def test(model, device, test_loader, epoch, metric):
     model.eval()
-    test_loss = correct = total = 0
+    test_loss = 0
     with torch.no_grad():
         for data, group, target in test_loader:
             data, group, target = data.to(device), group.to(device), target.to(device)
             output = model(data)
             test_loss += metric(output, target, group)
-            correct += (output.argmax(axis=1) == target).sum()
-            total += len(target)
-            get_all_metrics(output, target, group, log_mlflow_w_suffix="_dev")
+            fairness, general, fairprune = get_all_metrics(output, target, group, log_mlflow_w_suffix="_dev")
 
-    print(f"Test Epoch {epoch}: Avg loss: {(test_loss / len(test_loader)):.4f}, Avg accuracy = {correct / total:.4f}")
+    print(
+        f"{epoch:02}: E[loss]={(test_loss / len(test_loader)):.2f}, Macro[acc]={general.accuracy.total:.0%} G0[acc]={general.accuracy.group0:.0%} G1[acc]={general.accuracy.group1:.0%} G0[recall]={general.tpr.group0:.0%} G1[recall]={general.tpr.group1:.0%}"
+    )
     return test_loss / len(test_loader)
 
 
