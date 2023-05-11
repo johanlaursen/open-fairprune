@@ -1,4 +1,5 @@
 import datetime as dt
+import subprocess
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -202,6 +203,14 @@ def get_dataset(split: str, returns=["data", "group", "label"]):
         drop_last=True,
     )
     return next(iter(loader))
+
+
+def get_git_hash():
+    return (
+        subprocess.run(["git", "log", "-1", "--pretty=format:%H"], check=True, stdout=subprocess.PIPE)
+        .stdout.decode("utf-8")
+        .strip()
+    )
 
 
 if __name__ == "__main__":

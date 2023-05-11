@@ -1,4 +1,3 @@
-import subprocess
 import typing
 
 import click
@@ -11,7 +10,7 @@ from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 
 from open_fairprune import simple_nn
-from open_fairprune.data_util import LoanDataset, load_model
+from open_fairprune.data_util import LoanDataset, get_git_hash, load_model
 from open_fairprune.simple_nn import MODEL_NAME
 
 torch.manual_seed(42)
@@ -29,7 +28,7 @@ METRIC = nn.CrossEntropyLoss(weight=torch.tensor([1.0, 11.0]).to(device))
 @click.option("--gamma", default=1.0, type=float)
 @click.option("--epochs", default=10)
 @click.option("--checkpoint", default="", type=str)
-@click.option("--group_lambda", default=0.0, type=float)
+@click.option("--fairness", default=0.0, type=float)
 def init_cli(
     **kwargs,
 ):
@@ -132,36 +131,28 @@ def main(setup: ExperimentSetup):
 
     scheduler = StepLR(optimizer, step_size=1, gamma=setup.params["gamma"])
 
-    best_test_loss = 999
-    if setup.params["group_lambda"]:
-        metric = lambda y_pred, y_true, group: METRIC(y_pred, y_true) + setup.params[
-            "group_lambda"
-        ] * metric_fairness_loss(y_pred, y_true, group)
-    else:
-        metric = lambda y_pred, y_true, group: METRIC(y_pred, y_true)
+    def metric(y_pred, y_true, group):
+        λ = setup.params["fairness"]
+        return METRIC(y_pred, y_true) + (0 if λ == 0 else λ * metric_fairness_loss(y_pred, y_true, group))
 
-    git_hash = (
-        subprocess.run(["git", "log", "-1", "--pretty=format:%H"], check=True, stdout=subprocess.PIPE)
-        .stdout.decode("utf-8")
-        .strip()
-    )
-
+    best_test_loss = 1e16
     with mlflow.start_run():
-        mlflow.log_param("git_hash", git_hash)
+        mlflow.log_param("git_hash", get_git_hash())
         try:
             log_params(setup.params)
 
             for epoch in range(1, setup.params["epochs"] + 1):
                 train_loss = train(model, device, train_loader, optimizer, metric)
-                if (test_loss := test(model, device, dev_loader, epoch, metric)) < best_test_loss:
+                if (test_loss := test(model, device, dev_loader, epoch, metric)) < best_test_loss and epoch > 3:
                     best_test_loss = test_loss
+                    best_model = model
 
                 scheduler.step()
 
                 log_metric("train loss", train_loss, step=epoch)
                 log_metric("val loss", test_loss, step=epoch)
         finally:
-            mlflow.pytorch.log_model(model, "model")
+            mlflow.pytorch.log_model(best_model, "model")
 
 
 if __name__ == "__main__":
