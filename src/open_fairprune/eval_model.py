@@ -1,7 +1,7 @@
 import typing
 from contextlib import suppress
-from lib2to3.pgen2.pgen import generate_grammar
 
+import mlflow
 import numpy as np
 import pandas as pd
 import torch
@@ -185,9 +185,29 @@ def ROC_curve(y_pred, y_true, group):
     return plot
 
 
+def get_all_metrics(model_output, true, group, log_mlflow_w_suffix=None):
+    with torch.no_grad():
+        y_prob = model_output.softmax(dim=1).detach().cpu()
+
+    fairness_metrics = get_fairness_metrics(y_prob, true.cpu(), group.cpu())
+    general_metrics = get_general_metrics(y_prob, true.cpu(), group.cpu())
+    fairprune_metrics = FairPruneMetrics.from_general_metrics(general_metrics)
+    if log_mlflow_w_suffix is not None:
+        mlflow.log_metrics(
+            {
+                f"{key}{log_mlflow_w_suffix}": value.item()
+                if getattr(value, "total", None) is None
+                else value.total.item()
+                for metrics in [fairness_metrics, general_metrics, fairprune_metrics]
+                for key, value in zip(metrics._fields, metrics)
+            }
+        )
+    return fairness_metrics, general_metrics, fairprune_metrics
+
+
 if __name__ == "__main__":
-    favors_minority_100_to_one = "020ffd14ba2f44458ab0b435fabc6bab"
-    favors_minority_10_to_one = "368701f1065f4cd18fad9b51e7ec961f"
+    base = "068bc206b4f645ffab28b84c2a6b9150"
+    fairness_constraint = "5dfa4345b4744a73ad5e2d4a66fcd24e"
 
     model = load_model()
 

@@ -7,14 +7,9 @@ import torch
 import torch.nn as nn
 from backpack import backpack, extend
 from backpack.extensions import DiagHessian
-from torch.utils.data import DataLoader
 
-from open_fairprune.data_util import LoanDataset, get_dataset, load_model, timeit
-from open_fairprune.eval_model import (
-    FairPruneMetrics,
-    get_fairness_metrics,
-    get_general_metrics,
-)
+from open_fairprune.data_util import get_dataset, load_model, timeit
+from open_fairprune.eval_model import get_all_metrics
 
 metric = nn.CrossEntropyLoss()
 
@@ -42,8 +37,10 @@ def fairprune(
     g0 = group == unprivileged_group
     g1 = group == privileged_group
 
-    h0, θ = get_parameter_salience(model_extend, metric_extend, data[g0], target[g0])
-    h1, θ = get_parameter_salience(model_extend, metric_extend, data[g1], target[g1])
+    h0 = get_parameter_salience(model_extend, metric_extend, data[g0], target[g0])
+    h1 = get_parameter_salience(model_extend, metric_extend, data[g1], target[g1])
+
+    θ = torch.cat([param.flatten() for param in model_extend.parameters()])
 
     saliency = 1 / 2 * θ**2 * (h0 - beta * h1)
 
@@ -88,10 +85,7 @@ def get_parameter_salience(model_extend, metric_extend, data, target):
     with backpack(DiagHessian()):
         loss.backward()
 
-    h = torch.cat([param.diag_h.flatten() for param in model_extend.parameters()])
-    θ = torch.cat([param.flatten() for param in model_extend.parameters()])
-
-    return h, θ
+    return torch.cat([param.diag_h.flatten() for param in model_extend.parameters()])
 
 
 def hyperparameter_search_fairprune(RUNID, device, lossfunc):
@@ -103,12 +97,8 @@ def hyperparameter_search_fairprune(RUNID, device, lossfunc):
     # prune_ratios = np.insert(prune_ratios, np.searchsorted(prune_ratios, 0.35), 0.35)
     data, group, y_true = get_dataset("dev")
     train = get_dataset("train")
-    data_recall = {
-        "prune_ratio": prune_ratios,
-    }
-    data_eodd = {
-        "prune_ratio": prune_ratios,
-    }
+    data_recall = {"prune_ratio": prune_ratios}
+    data_eodd = {"prune_ratio": prune_ratios}
     data_mcc_eopp1 = {"prune_ratio": 0.35}
     with mlflow.start_run(run_name=f"fairprune_hyperparameter_search_{RUNID}"):
         matthews_scores = []
@@ -134,8 +124,7 @@ def hyperparameter_search_fairprune(RUNID, device, lossfunc):
                 with torch.no_grad():
                     y_pred = model_pruned(data.to("cuda")).softmax(dim=1).detach().cpu()
 
-                general_metrics = get_general_metrics(y_pred, y_true, group)
-                fairprune_metrics = FairPruneMetrics.from_general_metrics(general_metrics)
+                fairness_metrics, general_metrics, fairprune_metrics = get_all_metrics(y_pred, y_true, group)
                 recall_scores.append(round(general_metrics.tpr.total.item(), 3))
                 eodd.append(round(fairprune_metrics.EOdd.item(), 3))
                 if prune_ratio == 0.35:
@@ -185,13 +174,13 @@ if __name__ == "__main__":
     client = mlflow.MlflowClient()
     setup = client.get_run(RUN_ID).to_dictionary()["data"]["params"]
 
-    dev = get_dataset("dev")
     train = get_dataset("train")
 
     if hyperparameter_search:
         with timeit("hyperparameter_search"):
             hyperparameter_search_fairprune(RUNID=RUN_ID, device=device, lossfunc=lossfunc)
         exit()
+
     with timeit("fairprune"):
         model_pruned = fairprune(
             model=model,
@@ -211,22 +200,12 @@ if __name__ == "__main__":
         data, group, y_true = get_dataset("dev")
         model, RUN_ID = load_model(id=RUN_ID, return_run_id=True)  # reload to avoid overwriting
 
-        for model, suffix in [(model, "pre"), (model_pruned, "post")]:
+        for model, suffix in [(model, "pre_"), (model_pruned, "post_")]:
             with torch.no_grad():
                 model.eval()
                 y_pred = model(data.to("cuda")).softmax(dim=1).detach().cpu()
 
-            general_metrics = get_general_metrics(y_pred, y_true, group)
-            fairprune_metrics = FairPruneMetrics.from_general_metrics(general_metrics)
-
-            fairness_metrics = get_fairness_metrics(y_pred, y_true, group)
-
-            mlflow.log_metrics(
-                {f"{key}_{suffix}": value.item() for key, value in zip(fairprune_metrics._fields, fairprune_metrics)}
+            fairness_metrics, general_metrics, fairprune_metrics = get_all_metrics(
+                y_pred, y_true, group, log_mlflow_w_suffix=suffix
             )
-            mlflow.log_metrics(
-                {f"{key}_{suffix}": value.total.item() for key, value in zip(general_metrics._fields, general_metrics)}
-            )
-            print(f" Fairprune metrics for {suffix} pruning: ")
-            print(fairness_metrics)
-            print(general_metrics)
+            print(f" Fairprune metrics for {suffix} pruning: ", fairness_metrics, general_metrics, sep="\n")
