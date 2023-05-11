@@ -176,7 +176,7 @@ if __name__ == "__main__":
     prune_ratio = 0.001
     beta = 0.3
     hyperparameter_search = True
-    RUN_ID = "2499dc185c2747209b3ee1dd30cd57d0"  # latest
+    RUN_ID = "latest"
     device = torch.device("cuda")
     lossfunc = nn.CrossEntropyLoss()
 
