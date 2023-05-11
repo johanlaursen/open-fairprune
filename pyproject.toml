@@ -24,7 +24,8 @@ dependencies = [
   "holoviews",
   "hvplot",
   "ipywidgets",
-  "shap"
+  "shap",
+  "seaborn"
 ]
 
 [tool.black]
