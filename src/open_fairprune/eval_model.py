@@ -2,13 +2,15 @@ import typing
 from contextlib import suppress
 from dataclasses import dataclass
 
+import hvplot.pandas
 import mlflow
 import numpy as np
 import pandas as pd
+import panel as pn
 import torch
 from torchmetrics import Accuracy, MatthewsCorrCoef, Recall, Specificity
 
-from open_fairprune.data_util import get_dataset, load_model
+from open_fairprune.data_util import filter_mlflow_data, get_dataset, load_model
 
 
 @dataclass
@@ -215,6 +217,67 @@ def get_all_metrics(model_output, true, group, log_mlflow_w_suffix=None):
     return fairness_metrics, general_metrics, fairprune_metrics
 
 
+def fairness_constraint_parato_curve():
+    filters = {"params.checkpoint": "7b9c67bcf82b40328baf2294df5bd1a6"}
+    df = filter_mlflow_data(**filters)
+    # df_metrics = df[[c for c in df.columns if "metrics" in c]]
+    # df_metrics.columns = df_metrics.columns.str.replace("metrics.", "")
+    # df_metrics
+
+    client = mlflow.tracking.MlflowClient()
+    metrics = ["val loss", "Δ_eq_odds_t0_dev", "Δ_eq_odds_t1_dev", "tpr_dev", "fpr_dev", "tnr_dev", "matthews_dev"]
+    # sorted(df_metrics.columns.to_list())
+    # df_metrics[metrics]
+
+    def get_metrics(run_id):
+        return (
+            pd.DataFrame({metric: client.get_metric_history(run_id, metric) for metric in metrics})
+            .applymap(lambda x: x.value)
+            .assign(run_id=run_id)
+            .set_index("run_id", append=True)
+            .stack()
+            .rename_axis(["epoch", "run_id", "metric"])
+            .rename("value")
+            .reset_index()
+        )
+
+    metrics_history = pd.concat(map(get_metrics, df.run_id))
+
+    run_id_to_fairness = df.set_index("run_id")["params.fairness"].to_dict()
+    metrics_history["fairness"] = metrics_history.run_id.map(run_id_to_fairness)
+    metrics_history = metrics_history
+
+    minimums = metrics_history.groupby(["metric", "fairness"]).value.min().unstack("metric").reset_index()
+
+    # sort as categorical
+    minimums = minimums.astype({"fairness": float}).sort_values("fairness").astype({"fairness": str})
+    minimums.columns = minimums.columns.str.replace("_dev", "")
+
+    # minimums.rename(columns={"tpr": "Recall", "tnr": "Precision"}).hvplot.line(
+    #     x="fairness", y=["Recall", "Precision"], by="fairness", hover_cols=["fairness"], title="metrics"
+    # )
+
+    fairness_vs_matthews = minimums.hvplot.scatter(x="fairness", y="matthews", hover_cols=["fairness"], title="metrics")
+
+    minimums["color"] = minimums.fairness.astype(float)
+    kwargs = dict(x="Δ_eq_odds_t0", y="Δ_eq_odds_t1", hover_cols=["fairness"], width=400, height=300)
+    fairness_metrics_and_multiplier = minimums.hvplot.line(**kwargs) * minimums.hvplot.scatter(
+        **kwargs, c="color", cnorm="log", title="Fairness metrics \nColor: λ (fairness multiplier)"
+    )
+
+    metrics_history["color"] = metrics_history.fairness.astype(float)
+    matthews_history = metrics_history.query('metric == "matthews_dev"')
+    epoch_mins = matthews_history.groupby("fairness").apply(lambda df: df.iloc[df.value.argmin()])
+
+    loss_history = metrics_history.query('metric == "val loss"')
+    epoch_mins = loss_history.groupby("fairness").apply(lambda df: df.iloc[df.value.argmin()])
+    (
+        loss_history.hvplot.line(x="epoch", y="value", by="fairness", c="black")
+        * epoch_mins.hvplot.scatter(x="epoch", y="value", c="color", cnorm="log")
+    )
+    minimums
+
+
 if __name__ == "__main__":
     base = "068bc206b4f645ffab28b84c2a6b9150"
     fairness_constraint = "5dfa4345b4744a73ad5e2d4a66fcd24e"
@@ -224,6 +287,7 @@ if __name__ == "__main__":
     data, group, y_true = get_dataset("dev")
 
     with torch.no_grad():
+        model.eval()
         y_pred = model(data.to("cuda")).softmax(dim=1).detach().cpu()
 
     fairness_metrics = get_fairness_metrics(y_pred, y_true, group, thresh=0.5)
