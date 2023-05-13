@@ -73,7 +73,7 @@ def train(model, device, train_data, optimizer, metric):
     loss.backward()
     train_loss += loss
     optimizer.step()
-    return train_loss / len(data)
+    return train_loss
 
 
 def test(model, device, test_data, epoch, metric):
@@ -86,9 +86,9 @@ def test(model, device, test_data, epoch, metric):
         fairness, general, fairprune = get_all_metrics(output, target, group, log_mlflow_w_suffix="_dev")
 
     print(
-        f"{epoch:02}: E[loss]={(test_loss / len(data)):.2f}, Macro[acc]={general.accuracy.total:.0%} G0[acc]={general.accuracy.group0:.0%} G1[acc]={general.accuracy.group1:.0%} G0[recall]={general.tpr.group0:.0%} G1[recall]={general.tpr.group1:.0%}"
+        f"{epoch:02}: E[loss]={test_loss:.4f}, Macro[acc]={general.accuracy.total:.0%} G0[acc]={general.accuracy.group0:.0%} G1[acc]={general.accuracy.group1:.0%} G0[recall]={general.tpr.group0:.0%} G1[recall]={general.tpr.group1:.0%}"
     )
-    return test_loss / len(data)
+    return test_loss
 
 
 def metric_fairness_loss(output, target, group):
