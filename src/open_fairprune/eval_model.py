@@ -1,4 +1,5 @@
 import typing
+import warnings
 from contextlib import suppress
 from dataclasses import dataclass
 
@@ -11,6 +12,8 @@ import torch
 from torchmetrics import Accuracy, MatthewsCorrCoef, Recall, Specificity
 
 from open_fairprune.data_util import filter_mlflow_data, get_dataset, load_model
+
+warnings.filterwarnings("ignore", category=UserWarning)
 
 
 @dataclass
