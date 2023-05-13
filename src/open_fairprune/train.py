@@ -10,7 +10,7 @@ from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 
 from open_fairprune import simple_nn
-from open_fairprune.data_util import LoanDataset, get_git_hash, load_model
+from open_fairprune.data_util import get_dataset, get_git_hash, load_model
 from open_fairprune.eval_model import get_all_metrics
 from open_fairprune.simple_nn import MODEL_NAME
 
@@ -63,35 +63,32 @@ def get_setup(**params) -> ExperimentSetup:
     )
 
 
-def train(model, device, train_loader, optimizer, metric):
+def train(model, device, train_data, optimizer, metric):
     model.train()
     train_loss = 0
-    for data, group, target in train_loader:
-        data, group, target = data.to(device), group.to(device), target.to(device)
-        optimizer.zero_grad()
-        output = model(data)
-        loss = metric(output, target, group)
-        loss.backward()
-        train_loss += loss
-        optimizer.step()
-
-    return train_loss / len(train_loader)
+    data, group, target = [d.to(device) for d in train_data]
+    optimizer.zero_grad()
+    output = model(data)
+    loss = metric(output, target, group)
+    loss.backward()
+    train_loss += loss
+    optimizer.step()
+    return train_loss / len(data)
 
 
-def test(model, device, test_loader, epoch, metric):
+def test(model, device, test_data, epoch, metric):
     model.eval()
     test_loss = 0
     with torch.no_grad():
-        for data, group, target in test_loader:
-            data, group, target = data.to(device), group.to(device), target.to(device)
-            output = model(data)
-            test_loss += metric(output, target, group)
-            fairness, general, fairprune = get_all_metrics(output, target, group, log_mlflow_w_suffix="_dev")
+        data, group, target = [d.to(device) for d in test_data]
+        output = model(data)
+        test_loss += metric(output, target, group)
+        fairness, general, fairprune = get_all_metrics(output, target, group, log_mlflow_w_suffix="_dev")
 
     print(
-        f"{epoch:02}: E[loss]={(test_loss / len(test_loader)):.2f}, Macro[acc]={general.accuracy.total:.0%} G0[acc]={general.accuracy.group0:.0%} G1[acc]={general.accuracy.group1:.0%} G0[recall]={general.tpr.group0:.0%} G1[recall]={general.tpr.group1:.0%}"
+        f"{epoch:02}: E[loss]={(test_loss / len(data)):.2f}, Macro[acc]={general.accuracy.total:.0%} G0[acc]={general.accuracy.group0:.0%} G1[acc]={general.accuracy.group1:.0%} G0[recall]={general.tpr.group0:.0%} G1[recall]={general.tpr.group1:.0%}"
     )
-    return test_loss / len(test_loader)
+    return test_loss / len(data)
 
 
 def metric_fairness_loss(output, target, group):
@@ -108,29 +105,11 @@ def metric_fairness_loss(output, target, group):
 
 
 def main(setup: ExperimentSetup):
+    train_data, dev_data = get_dataset("train"), get_dataset("dev")
+
     device = torch.device("cuda")
-
-    data_kwargs = {
-        # "num_workers": 4,
-        "pin_memory": True,
-        "shuffle": True,  # Only done once for entire run
-        "batch_size": setup.params["batch_size"],
-        "drop_last": True,  # Drop last batch if it's not full
-    }
-
-    train_loader, dev_loader = [
-        DataLoader(
-            LoanDataset(split, **setup.dataset_kwargs),
-            **data_kwargs,
-            **setup.dataloader_kwargs,
-        )
-        for split in ["train", "dev"]
-    ]
-
     model = setup.model.to(device)
-
     optimizer = optim.Adam(params=model.parameters(), lr=setup.params["lr"], weight_decay=setup.params["decay"])
-
     scheduler = StepLR(optimizer, step_size=1, gamma=setup.params["gamma"])
 
     def metric(y_pred, y_true, group):
@@ -144,8 +123,8 @@ def main(setup: ExperimentSetup):
             log_params(setup.params)
 
             for epoch in range(1, setup.params["epochs"] + 1):
-                train_loss = train(model, device, train_loader, optimizer, metric)
-                if (test_loss := test(model, device, dev_loader, epoch, metric)) < best_test_loss and epoch > 3:
+                train_loss = train(model, device, train_data, optimizer, metric)
+                if (test_loss := test(model, device, dev_data, epoch, metric)) < best_test_loss and epoch > 3:
                     best_test_loss = test_loss
                     best_model = model
 
