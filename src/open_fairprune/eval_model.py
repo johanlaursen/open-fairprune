@@ -9,6 +9,9 @@ import torch
 from torchmetrics import Accuracy, MatthewsCorrCoef, Recall, Specificity
 
 from open_fairprune.data_util import get_dataset, load_model
+import warnings
+
+warnings.filterwarnings("ignore", category=UserWarning)
 
 
 @dataclass
