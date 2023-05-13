@@ -45,7 +45,7 @@ def fairprune(
     saliency = 1 / 2 * θ**2 * (h0 - beta * h1)
 
     k = int(prune_ratio * len(θ))
-    topk_indices = torch.topk(saliency, k).indices
+    topk_indices = torch.topk(-saliency, k).indices
     θ[topk_indices] = 0
 
     param_index = n_pruned = n_param = 0
