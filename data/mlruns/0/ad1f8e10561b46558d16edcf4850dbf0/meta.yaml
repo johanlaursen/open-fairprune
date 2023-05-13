@@ -1,0 +1,15 @@
+artifact_uri: file://D:\Github\OpenFairPrune\data\mlruns/0/ad1f8e10561b46558d16edcf4850dbf0/artifacts
+end_time: 1683906134407
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: ad1f8e10561b46558d16edcf4850dbf0
+run_name: overjoyed-slug-911
+run_uuid: ad1f8e10561b46558d16edcf4850dbf0
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1683905135708
+status: 3
+tags: []
+user_id: Alan
