@@ -8,7 +8,7 @@ import torch.nn as nn
 from backpack import backpack, extend
 from backpack.extensions import DiagHessian
 
-from open_fairprune.data_util import get_dataset, load_model, timeit
+from open_fairprune.data_util import DATA_PATH, get_dataset, load_model, timeit
 from open_fairprune.eval_model import get_all_metrics
 
 metric = nn.CrossEntropyLoss()
@@ -91,17 +91,24 @@ def get_parameter_salience(model_extend, metric_extend, data, target):
 def hyperparameter_search_fairprune(RUN_ID, device, lossfunc):
     """Hyperparameter search for fairprune to reproduce ablation study from paper"""
     betas = [0.1, 0.3, 0.5, 0.7, 0.9]
-    # prune_ratios = np.linspace(0, 0.001, 11)
     prune_ratios = np.linspace(0, 0.1, 11)
-    target_tradeoff = 0.05
-    # prune_ratios = np.insert(prune_ratios, np.searchsorted(prune_ratios, target_tradeoff), target_tradeoff)
+    prune_ratios2 = np.linspace(0, 1, 11)
+    prune_ratios = np.sort(np.concatenate((prune_ratios, prune_ratios2[1:])))
+
+    target_tradeoff = 0.35
+    prune_ratios = np.insert(prune_ratios, np.searchsorted(prune_ratios, target_tradeoff), target_tradeoff)
     data, group, y_true = get_dataset("dev")
     train = get_dataset("train")
     data_accuracy = {"prune_ratio": prune_ratios}
     data_eodd = {"prune_ratio": prune_ratios}
     data_mcc_eopp1 = {"prune_ratio": target_tradeoff}
-    accuracy_metric = "accuracy"
-    fairness_metric = "parity"
+    accuracy_metric = "matthews"
+    fairness_metric = "Eodd"
+    df_all = pd.DataFrame(columns=[])
+
+    def flatten(metrics):
+        return pd.DataFrame(metrics, index=metrics._fields)
+
     with mlflow.start_run(run_id=RUN_ID):
         matthews_scores = []
         eopp1 = []
@@ -127,14 +134,29 @@ def hyperparameter_search_fairprune(RUN_ID, device, lossfunc):
                     y_pred = model_pruned(data.to("cuda")).softmax(dim=1).detach().cpu()
 
                 fairness_metrics, general_metrics, fairprune_metrics = get_all_metrics(y_pred, y_true, group)
-                accuracy_scores.append(round(general_metrics.accuracy.total.item(), 3))
+
+                df_gen = pd.DataFrame(general_metrics, index=general_metrics._fields).astype(float).stack()
+                df_fairness = pd.DataFrame(fairness_metrics, index=fairness_metrics._fields).astype(float).stack()
+                df_fairprune = pd.DataFrame(fairprune_metrics, index=fairprune_metrics._fields).astype(float).stack()
+                result_dict = (
+                    pd.concat([flatten(fairness_metrics), flatten(general_metrics).stack(), flatten(fairprune_metrics)])
+                    .squeeze()
+                    .apply(float)
+                    .to_dict()
+                )
+                result_dict["prune_ratio"] = prune_ratio
+                result_dict["beta"] = beta
+                if df_all is None:
+                    df_all = pd.DataFrame(columns=result_dict.keys())
+                df_all = pd.concat([df_all, pd.DataFrame(result_dict, index=[0])])
+                accuracy_scores.append(round(general_metrics.matthews.total.item(), 3))
                 fairness_scores.append(round(fairprune_metrics.EOdd.item(), 3))
                 if prune_ratio == target_tradeoff:
                     matthews_scores.append(round(general_metrics.matthews.total.item(), 3))
                     eopp1.append(round(fairprune_metrics.EOpp1.item(), 3))
 
-            data_accuracy[f"Beta={beta}"] = accuracy_scores
-            data_eodd[f"Beta={beta}"] = fairness_scores
+            data_accuracy[f"β={beta}"] = accuracy_scores
+            data_eodd[f"β={beta}"] = fairness_scores
         df_data_accuracy = pd.DataFrame(data_accuracy)
         df_data_eodd = pd.DataFrame(data_eodd)
         print(f"df_data_{accuracy_metric}: ", df_data_accuracy)
@@ -145,12 +167,15 @@ def hyperparameter_search_fairprune(RUN_ID, device, lossfunc):
             if "Beta" in key:
                 sns.lineplot(data=df_data_accuracy, x="prune_ratio", y=key, label=key, marker="o")
         plt.ylabel(accuracy_metric)
+        plt.xlabel("Prune Ratio")
         mlflow.log_figure(fig, f"fairprune_hyperparameter_search_{accuracy_metric}.png")
         fig = plt.figure(figsize=(6, 6))
         for key in data_eodd.keys():
             if "Beta" in key:
                 sns.lineplot(data=df_data_eodd, x="prune_ratio", y=key, label=key, marker="o")
         plt.ylabel(fairness_metric)
+        plt.xlabel("Prune Ratio")
+
         mlflow.log_figure(fig, f"fairprune_hyperparameter_search_{fairness_metric}.png")
 
         fig = plt.figure(figsize=(6, 6))
@@ -162,13 +187,14 @@ def hyperparameter_search_fairprune(RUN_ID, device, lossfunc):
         plt.xlabel("EOpp1")
         plt.title(f"Matthews vs EOpp1 at {target_tradeoff} Prune Ratio")
         mlflow.log_figure(fig, f"fairprune_hyperparameter_search_matthews_eopp1.png")
+        df_all.to_json("fairprune_hyperparameter_search.json", orient="records")
 
 
 if __name__ == "__main__":
-    prune_ratio = 0.001
-    beta = 0.3
+    prune_ratio = 0.3
+    beta = 0.5
     hyperparameter_search = True
-    RUN_ID = "latest"
+    RUN_ID = "7b9c67bcf82b40328baf2294df5bd1a6"
     device = torch.device("cuda")
     lossfunc = nn.CrossEntropyLoss()
 
@@ -198,6 +224,8 @@ if __name__ == "__main__":
         )
 
     with mlflow.start_run(RUN_ID):
+        mlflow.set_tracking_uri(uri=f"file://{DATA_PATH}\mlruns")
+
         mlflow.pytorch.log_model(model_pruned, f"fairpruned_model_{prune_ratio}_{beta}")
 
         data, group, y_true = get_dataset("dev")
