@@ -66,13 +66,19 @@ def get_setup(**params) -> ExperimentSetup:
 def train(model, device, train_data, optimizer, metric):
     model.train()
     train_loss = 0
-    data, group, target = [d.to(device) for d in train_data]
-    optimizer.zero_grad()
-    output = model(data)
-    loss = metric(output, target, group)
-    loss.backward()
-    train_loss += loss
-    optimizer.step()
+
+    n_chunks = 4
+    chunk_size = len(train_data[0]) // n_chunks
+    slices = [slice(i * chunk_size, (i + 1) * chunk_size) for i in range(n_chunks)]
+
+    for s in slices:
+        data, group, target = [d[s].to(device) for d in train_data]
+        optimizer.zero_grad()
+        output = model(data)
+        loss = metric(output, target, group)
+        loss.backward()
+        train_loss += loss
+        optimizer.step()
     return train_loss
 
 
@@ -135,6 +141,23 @@ def main(setup: ExperimentSetup):
         finally:
             mlflow.pytorch.log_model(best_model, "model")
 
+
+"""
+train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 0.1 &&
+train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 0.25 &&
+train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 0.5 &&
+train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 1 &&
+train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 2 &&
+train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 4 &&
+train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 8 &&
+train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 16 &&
+train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 32 &&
+train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 64 &&
+train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 128 &&
+train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 256 &&
+
+train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 0.1 && train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 0.25 && train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 0.5 && train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 1 && train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 2 && train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 4 && train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 8 && train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 16 && train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 32 && train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 64 && train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 128 && train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 256
+"""
 
 if __name__ == "__main__":
     init_cli()
