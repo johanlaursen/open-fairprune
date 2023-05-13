@@ -1,5 +1,6 @@
 import typing
 from contextlib import suppress
+from dataclasses import dataclass
 
 import mlflow
 import numpy as np
@@ -10,14 +11,23 @@ from torchmetrics import Accuracy, MatthewsCorrCoef, Recall, Specificity
 from open_fairprune.data_util import get_dataset, load_model
 
 
-class GroupScore(typing.NamedTuple):
-    total: float
+@dataclass
+class GroupScore:
     group0: float
     group1: float
+    total: float = None
+
+    def __init__(self, group0, group1):
+        self.group0 = torch.tensor(group0)
+        self.group1 = torch.tensor(group1)
+        self.total = torch.tensor((group0 + group1) / 2)
 
     def __repr__(self):
         total, group0, group1 = self.total, self.group0, self.group1
         return f"{total = :.2f} ({group0 = :.2f}, {group1 = :.2f})"
+
+    def _fields(self):
+        return ("total", "group0", "group1")
 
 
 class GeneralMetrics(typing.NamedTuple):
@@ -136,7 +146,7 @@ def get_general_metrics(y_pred, y_true, group, thresh=0.5) -> FairnessMetrics:
         tnr=Specificity(**kwargs),
     )
 
-    groups = [df, g0_df, g1_df]  # order is important
+    groups = [g0_df, g1_df]  # order is important
 
     results = []
     for metric_func in metrics.values():
