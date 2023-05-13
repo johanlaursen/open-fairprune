@@ -71,7 +71,7 @@ class FairPruneMetrics(typing.NamedTuple):
     def from_general_metrics(cls, metrics: GeneralMetrics) -> "FairPruneMetrics":
         # For EOpp: The paper sums this for y=1 and y=0, but in binary classification we can just do y=1?
         EOpp0 = abs(metrics.tnr.group0 - metrics.tnr.group1)
-        EOpp1 = abs(metrics.tpr.group0 - metrics.fpr.group1)
+        EOpp1 = abs(metrics.tpr.group0 - metrics.tpr.group1)
         EOdd = abs(metrics.tpr.group1 - metrics.tpr.group0 + metrics.fpr.group1 - metrics.fpr.group0)
         EOdd_sep_abs = abs(metrics.tpr.group1 - metrics.tpr.group0) + abs(metrics.fpr.group1 - metrics.fpr.group0)
         return cls(EOpp0, EOpp1, EOdd, EOdd_sep_abs)
