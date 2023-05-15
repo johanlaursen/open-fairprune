@@ -28,6 +28,9 @@ def fairprune(
         beta: ratio between 0 and 1 for weighting of privileged group
         privileged_group: privileged group idx in group tensor
         unprivileged_group: unprivileged group idx in group tensor
+        verbose: boolean check to print pruning information
+    RETURNS:
+        model: pruned model
     """
     model_extend = extend(model).to(device)
     metric_extend = extend(metric).to(device)
@@ -41,11 +44,9 @@ def fairprune(
     h1 = get_parameter_salience(model_extend, metric_extend, data[g1], target[g1])
 
     θ = torch.cat([param.flatten() for param in model_extend.parameters()])
-
-    saliency = 1 / 2 * θ**2 * (h0 - beta * h1)
-
-    k = int(prune_ratio * len(θ))
-    topk_indices = torch.topk(-saliency, k).indices
+    saliency = 1 / 2 * θ**2 * (h0 - beta * h1)  # saliency matrix
+    k = int(prune_ratio * len(θ))  # number of parameters to be pruned
+    topk_indices = torch.topk(-saliency, k).indices  # note we want to prune the smallest values hence negative
     θ[topk_indices] = 0
 
     param_index = n_pruned = n_param = 0
