@@ -45,9 +45,10 @@ class GroupScore:
 class GeneralMetrics(typing.NamedTuple):
     accuracy: GroupScore
     matthews: GroupScore
-    tpr: GroupScore  # recall, sensitivity
-    fpr: GroupScore  # 1 - specificity
+    tpr: GroupScore  # Recall, Sensitivity
+    fpr: GroupScore  # 1 - Specificity
     tnr: GroupScore  # Specificity
+    fnr: GroupScore  # 1 - Recall
 
     def __repr__(self):
         out = []
@@ -156,6 +157,7 @@ def get_general_metrics(y_pred, y_true, group, thresh=0.5) -> FairnessMetrics:
         tpr=Recall(**kwargs),
         fpr=lambda x, y: 1 - Specificity(**kwargs)(x, y),
         tnr=Specificity(**kwargs),
+        fnr=lambda x, y: 1 - Recall(**kwargs)(x, y),
     )
 
     groups = [g0_df, g1_df]  # order is important
@@ -169,6 +171,21 @@ def get_general_metrics(y_pred, y_true, group, thresh=0.5) -> FairnessMetrics:
         results.append(GroupScore(*group_metrics))
 
     return GeneralMetrics(*results)
+
+
+def get_MCC(y_pred, y_true, thresh=0.5) -> FairnessMetrics:
+    df = pd.DataFrame(
+        {
+            "y_true": y_true,
+            "y_pred": y_pred[:, 1],
+        }
+    )
+    kwargs = dict(task="binary", threshold=thresh)
+    matthews = MatthewsCorrCoef(**kwargs)
+
+    y_pred, y_true = torch.tensor(df.y_pred.values), torch.tensor(df.y_true.values)
+
+    return GeneralMetrics(matthews(y_pred, y_true))
 
 
 def ROC_curve(y_pred, y_true, group):
@@ -200,7 +217,42 @@ def ROC_curve(y_pred, y_true, group):
     mids = mid_df.hvplot.scatter(**kwargs, size=100, marker="square")
     plot = ROC_plot * mids
     plot
+
     return plot
+
+
+def MCC_Odds(y_pred, y_true, group):
+
+    data = []
+    for threshold in range(0, 101, 2):
+        matthews = MatthewsCorrCoef(num_classes=2, task="binary", threshold=threshold / 100)
+        metrics = get_general_metrics(y_pred, y_true, group, thresh=threshold / 100)
+        mcc = matthews(torch.tensor(y_pred[:, 1]), torch.tensor(y_true))
+        data.append(("g = 0", metrics.fpr.group0, metrics.tpr.group0, mcc, threshold / 100))
+        data.append(("g = 1", metrics.fpr.group1, metrics.tpr.group1, mcc, threshold / 100))
+
+    df = pd.DataFrame(data, columns=["G", "fpr", "tpr", "mcc", "thresh"])
+
+    # Convert tensor values to floats
+    df[["fpr", "tpr", "mcc"]] = df[["fpr", "tpr", "mcc"]].applymap(lambda x: x.item())
+
+    # Split the dataframe into two groups
+    df0 = df[df["G"] == "g = 0"]
+    df1 = df[df["G"] == "g = 1"]
+
+    # Rename columns for merging
+    df0 = df0.rename(columns={"fpr": "fpr0", "tpr": "tpr0"})
+    df1 = df1.rename(columns={"fpr": "fpr1", "tpr": "tpr1"})
+
+    # Merge dataframes on thresh
+    df_merged = pd.merge(df0, df1, on=["thresh", "mcc"])
+
+    # Compute delta equalized odds
+    df_merged["DEOdds"] = abs(df_merged["tpr0"] - df_merged["tpr1"]) + abs(df_merged["fpr0"] - df_merged["fpr1"])
+
+    # Print df
+    df_merged.to_csv("../../data/mcc_odds.csv", index=False)
+    return df_merged
 
 
 def get_all_metrics(model_output, true, group, log_mlflow_w_suffix=None):
@@ -366,3 +418,4 @@ if __name__ == "__main__":
     print(fairprune_metrics)
 
     ROC_curve(y_pred, y_true, group)
+    MCC_Odds(y_pred, y_true, group)
