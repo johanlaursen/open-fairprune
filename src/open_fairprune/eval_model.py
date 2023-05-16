@@ -26,7 +26,8 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 hv.extension("bokeh")
 
-BASE_RUN_ID = "7b9c67bcf82b40328baf2294df5bd1a6"
+FINETUNE_RUN_ID = "7b9c67bcf82b40328baf2294df5bd1a6"
+INIT_RUN_ID = "46521209a91e46758f2201ca95750a2e"  # Basically just initialized weights
 
 
 @dataclass
@@ -228,7 +229,6 @@ def ROC_curve(y_pred, y_true, group):
 
 
 def MCC_Odds(y_pred, y_true, group):
-
     data = []
     for threshold in range(0, 101, 2):
         matthews = MatthewsCorrCoef(num_classes=2, task="binary", threshold=threshold / 100)
@@ -281,8 +281,8 @@ def get_all_metrics(model_output, true, group, log_mlflow_w_suffix=None):
     return fairness_metrics, general_metrics, fairprune_metrics
 
 
-def get_fairness_loss_metrics():
-    filters = {"params.checkpoint": BASE_RUN_ID}
+def get_fairness_loss_metrics(resume_run_id):
+    filters = {"params.checkpoint": resume_run_id}
     run_df = filter_mlflow_data(**filters)
     run_df.columns
 
@@ -341,30 +341,44 @@ def plot_pareto_curve(metrics_df, fair_col, perf_col):
         c=metrics_df.color.iloc[0],
         hover_cols="all",
     )  # hover_cols=["fairness"],
-    pareto_line = get_pareto_curve_df(metrics_df, fair_col, perf_col).hvplot(y=perf_col, **kw)
 
+    pareto_line = get_pareto_curve_df(metrics_df, fair_col, perf_col).hvplot(y=perf_col, **kw)
     possible_values_plot = metrics_df.hvplot.scatter(y=perf_col, s=5, **kw)
     return possible_values_plot * pareto_line.relabel(metrics_df.metric.iloc[0])
 
 
 def fairness_constraint_parato_curve():
-    fairloss_df = get_fairness_loss_metrics().assign(metric="fairloss", color="purple")
+    fairloss_df_finetune = get_fairness_loss_metrics(FINETUNE_RUN_ID).assign(metric="λloss_cp", color="purple")
+    fairloss_df_init = get_fairness_loss_metrics(INIT_RUN_ID).assign(metric="λloss_init", color="indigo")
+    fairloss_df_init = (
+        fairloss_df_init.groupby("fairness")
+        .apply(lambda x: x.loc[x["matthews"].nlargest(5).index])
+        .reset_index(drop=True)
+    )
 
     fairprune_df = pd.DataFrame(json.load(open(DATA_PATH / "fairprune_hyperparameter_search.json"))).assign(
         color="orange", metric="fairprune"
     )
     fairprune_df.columns = fairprune_df.columns.str.replace("('matthews', 'total')", "matthews")
 
-    fair_col = "EOdd_sep_abs"
-    perf_col = "matthews"
-
-    hv.Overlay([plot_pareto_curve(df, fair_col, perf_col) for df in [fairloss_df, fairprune_df]]).opts(
-        legend_position="bottom_right"
+    groupwise_df = (
+        pd.read_csv(DATA_PATH / "mcc_odds.csv")
+        .rename(columns={"mcc": "matthews", "DEOdds": "EOdd_sep_abs"})
+        .assign(color="magenta", metric="group-clfs")
     )
+
+    pareto_curves = hv.Overlay(
+        [
+            plot_pareto_curve(df, fair_col="EOdd_sep_abs", perf_col="matthews")
+            for df in [fairloss_df_finetune, fairloss_df_init, fairprune_df, groupwise_df]
+        ]
+    ).opts(width=300, height=300, legend_position="bottom_right", xlim=(0, 0.8))
+    pareto_curves
+    return pareto_curves
 
 
 def fairness_loss_plots():
-    fairloss_df = get_fairness_loss_metrics()
+    fairloss_df = get_fairness_loss_metrics(FINETUNE_RUN_ID)
     colorbar_kw = dict(
         colorbar=True,
         colorbar_position="bottom",
@@ -425,13 +439,13 @@ def fairness_loss_plots():
 
     timeline_plots[-1].opts(hv.opts.Scatter(**colorbar_kw, xaxis=True)).opts(height=H + 120)
     # PLOT 2
-    pn.serve(timeline_plots)
+    timeline_plots
 
     return fairness_metrics_and_multiplier, timeline_plots
 
 
 if __name__ == "__main__":
-    model = load_model(BASE_RUN_ID)
+    model = load_model(FINETUNE_RUN_ID)
 
     data, group, y_true = get_dataset("dev")
 
@@ -451,5 +465,17 @@ if __name__ == "__main__":
     print()
     print(fairprune_metrics)
 
-    ROC_curve(y_pred, y_true, group)
-    MCC_Odds(y_pred, y_true, group)
+    roc_curve = ROC_curve(y_pred, y_true, group)
+    mcc_ods = MCC_Odds(y_pred, y_true, group)
+
+    fairness_metrics_and_multiplier, timeline_plots = fairness_loss_plots()
+    pareto_curve = fairness_constraint_parato_curve()
+    pn.serve(
+        pn.Column(
+            roc_curve,
+            fairness_metrics_and_multiplier,
+            timeline_plots,
+            pareto_curve,
+            mcc_ods,
+        )
+    )

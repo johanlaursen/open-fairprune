@@ -143,6 +143,25 @@ def main(setup: ExperimentSetup):
 
 
 """
+# This checkpoint has basically no training
+train-prune --checkpoint 46521209a91e46758f2201ca95750a2e --lr 1e-4 --epochs 150 --fairness 0.1 &&
+train-prune --checkpoint 46521209a91e46758f2201ca95750a2e --lr 1e-4 --epochs 150 --fairness 0.25 &&
+train-prune --checkpoint 46521209a91e46758f2201ca95750a2e --lr 1e-4 --epochs 150 --fairness 0.5 &&
+train-prune --checkpoint 46521209a91e46758f2201ca95750a2e --lr 1e-4 --epochs 150 --fairness 1 &&
+train-prune --checkpoint 46521209a91e46758f2201ca95750a2e --lr 1e-4 --epochs 150 --fairness 2 &&
+train-prune --checkpoint 46521209a91e46758f2201ca95750a2e --lr 1e-4 --epochs 150 --fairness 4 &&
+train-prune --checkpoint 46521209a91e46758f2201ca95750a2e --lr 1e-4 --epochs 150 --fairness 8 &&
+train-prune --checkpoint 46521209a91e46758f2201ca95750a2e --lr 1e-4 --epochs 150 --fairness 16 &&
+train-prune --checkpoint 46521209a91e46758f2201ca95750a2e --lr 1e-4 --epochs 150 --fairness 32 &&
+train-prune --checkpoint 46521209a91e46758f2201ca95750a2e --lr 1e-4 --epochs 150 --fairness 64 &&
+train-prune --checkpoint 46521209a91e46758f2201ca95750a2e --lr 1e-4 --epochs 150 --fairness 128 &&
+train-prune --checkpoint 46521209a91e46758f2201ca95750a2e --lr 1e-4 --epochs 150 --fairness 256 &&
+train-prune --checkpoint 46521209a91e46758f2201ca95750a2e --lr 1e-4 --epochs 150 --fairness 512 &&
+train-prune --checkpoint 46521209a91e46758f2201ca95750a2e --lr 1e-4 --epochs 150 --fairness 1024 &&
+train-prune --checkpoint 46521209a91e46758f2201ca95750a2e --lr 1e-4 --epochs 150 --fairness 2048 &&
+train-prune --checkpoint 46521209a91e46758f2201ca95750a2e --lr 1e-4 --epochs 150 --fairness 4096 &&
+
+# This checkpoint has converged
 train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 0.1 &&
 train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 0.25 &&
 train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 0.5 &&
@@ -155,8 +174,10 @@ train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 
 train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 64 &&
 train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 128 &&
 train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 256 &&
-
-train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 0.1 && train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 0.25 && train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 0.5 && train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 1 && train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 2 && train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 4 && train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 8 && train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 16 && train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 32 && train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 64 && train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 128 && train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 256
+train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 512 &&
+train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 1024 &&
+train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 2048 &&
+train-prune --checkpoint 7b9c67bcf82b40328baf2294df5bd1a6 --lr 1e-4 --epochs 25 --fairness 4096 &&
 """
 
 if __name__ == "__main__":
