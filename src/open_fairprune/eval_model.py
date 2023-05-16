@@ -1,3 +1,4 @@
+import json
 import typing
 import warnings
 from contextlib import suppress
@@ -13,7 +14,12 @@ import torch
 from bokeh.models import FixedTicker
 from torchmetrics import Accuracy, MatthewsCorrCoef, Recall, Specificity
 
-from open_fairprune.data_util import filter_mlflow_data, get_dataset, load_model
+from open_fairprune.data_util import (
+    DATA_PATH,
+    filter_mlflow_data,
+    get_dataset,
+    load_model,
+)
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -223,18 +229,18 @@ def get_all_metrics(model_output, true, group, log_mlflow_w_suffix=None):
     return fairness_metrics, general_metrics, fairprune_metrics
 
 
-def fairness_constraint_parato_curve():
+def get_fairness_loss_metrics():
     filters = {"params.checkpoint": BASE_RUN_ID}
     run_df = filter_mlflow_data(**filters)
-    # df_metrics = df[[c for c in df.columns if "metrics" in c]]
-    # df_metrics.columns = df_metrics.columns.str.replace("metrics.", "")
-    # df_metrics
+    run_df.columns
 
     client = mlflow.tracking.MlflowClient()
     metrics = [
         "val loss",
         "Δ_eq_odds_t0_dev",
         "Δ_eq_odds_t1_dev",
+        "EOpp0_dev",
+        "EOpp1_dev",
         "tpr_dev",
         "fpr_dev",
         "tnr_dev",
@@ -258,26 +264,55 @@ def fairness_constraint_parato_curve():
 
     run_id_to_fairness = run_df.set_index("run_id")["params.fairness"].to_dict()
     metrics_history["fairness"] = metrics_history.run_id.map(run_id_to_fairness)
+    wide_format_df = metrics_history.pivot(index=["fairness", "epoch"], columns="metric", values="value")
+    wide_format_df.columns = wide_format_df.columns.str.replace("_dev", "")
+    return wide_format_df.reset_index()
 
-    fair_col = "EOdd_sep_abs_dev"
-    loss_col = "matthews_dev"
+
+def get_pareto_curve_df(metrics_df, fair_col, perf_col):
     pareto_frontier = metrics_df.sort_values(fair_col)
-    x = pareto_frontier[loss_col]
+    x = pareto_frontier[perf_col]
     while not all(increasing := x > x.shift(1).fillna(0)):
         pareto_frontier = pareto_frontier[increasing]
-        x = pareto_frontier[loss_col]
+        x = pareto_frontier[perf_col]
     next_point_same_value = pareto_frontier.assign(**{fair_col: pareto_frontier[fair_col].shift(-1)})
-    pareto_frontier = pd.concat([pareto_frontier, next_point_same_value]).sort_values([loss_col, fair_col])
 
-    kw = dict(x=fair_col, hover_cols=["fairness"], title="Pareto frontier", xlabel="Equalized odds", ylabel="MCC")
-    pareto_line = pareto_frontier.hvplot(y=loss_col, c="red", **kw)
-
-    metrics_df = metrics_history.pivot(index=["fairness", "epoch"], columns="metric", values="value").reset_index()
-    possible_values_plot = metrics_df.hvplot.scatter(y="matthews_dev", s=5, **kw)
-    return possible_values_plot * pareto_line
+    return pd.concat([pareto_frontier, next_point_same_value]).sort_values([perf_col, fair_col])
 
 
-def fairness_plots(metrics_history):
+def plot_pareto_curve(metrics_df, fair_col, perf_col):
+    kw = dict(
+        x=fair_col,
+        title="Pareto frontier",
+        xlabel="Equalized odds",
+        ylabel="MCC",
+        c=metrics_df.color.iloc[0],
+        hover_cols="all",
+    )  # hover_cols=["fairness"],
+    pareto_line = get_pareto_curve_df(metrics_df, fair_col, perf_col).hvplot(y=perf_col, **kw)
+
+    possible_values_plot = metrics_df.hvplot.scatter(y=perf_col, s=5, **kw)
+    return possible_values_plot * pareto_line.relabel(metrics_df.metric.iloc[0])
+
+
+def fairness_constraint_parato_curve():
+    fairloss_df = get_fairness_loss_metrics().assign(metric="fairloss", color="purple")
+
+    fairprune_df = pd.DataFrame(json.load(open(DATA_PATH / "fairprune_hyperparameter_search.json"))).assign(
+        color="orange", metric="fairprune"
+    )
+    fairprune_df.columns = fairprune_df.columns.str.replace("('matthews', 'total')", "matthews")
+
+    fair_col = "EOdd_sep_abs"
+    perf_col = "matthews"
+
+    hv.Overlay([plot_pareto_curve(df, fair_col, perf_col) for df in [fairloss_df, fairprune_df]]).opts(
+        legend_position="bottom_right"
+    )
+
+
+def fairness_loss_plots():
+    fairloss_df = get_fairness_loss_metrics()
     colorbar_kw = dict(
         colorbar=True,
         colorbar_position="bottom",
@@ -285,33 +320,32 @@ def fairness_plots(metrics_history):
         cnorm="log",
         colorbar_opts={
             "height": 5,
-            "ticker": FixedTicker(ticks=sorted(metrics_history.fairness.astype(float).unique())),
+            "ticker": FixedTicker(ticks=sorted(fairloss_df.fairness.astype(float).unique())),
         },
     )
 
-    minimums = (  # selected rows minimizing Δ_eq_odds_t0_dev
-        metrics_history.pivot(index=["fairness", "epoch"], columns="metric", values="value")
-        .reset_index()
-        .groupby(["fairness"])
-        .apply(lambda x: x[x["Δ_eq_odds_t0_dev"] == x["Δ_eq_odds_t0_dev"].min()])
-        .reset_index(drop=True)
+    fair_col0 = "EOpp0"
+    fair_col1 = "EOpp1"
+    fair_col = "EOdd_sep_abs"
+
+    minimums = (  # selected rows minimizing fair_col
+        fairloss_df.groupby(["fairness"]).apply(lambda x: x[x[fair_col] == x[fair_col].min()]).reset_index(drop=True)
     )
 
     # sort as categorical
     minimums = minimums.astype({"fairness": float}).sort_values("fairness").astype({"fairness": str})
-    minimums.columns = minimums.columns.str.replace("_dev", "")
 
     minimums["color"] = minimums.fairness.astype(float)
-    kwargs = dict(x="Δ_eq_odds_t0", y="Δ_eq_odds_t1", hover_cols=["fairness"], width=250, height=200)
+    kwargs = dict(x=fair_col0, y=fair_col1, hover_cols=["fairness"], width=250, height=200)
     fairness_metrics_and_multiplier = minimums.hvplot.line(**kwargs) * minimums.hvplot.scatter(
         **kwargs, c="color", title="λ fairness effect", yticks=3, xticks=3
     ).opts(
         clabel="λ (fairness multiplier)",
         cnorm="log",
-        ylabel="Δ equalized odds (y=1)",
-        xlabel="Δ equalized odds (y=0)",
+        xlabel="Eq. Oppertunity (y=0)",
+        ylabel="Eq. Oppertunity (y=1)",
         colorbar_opts={
-            "ticker": FixedTicker(ticks=sorted(metrics_history.fairness.astype(float).unique())),
+            "ticker": FixedTicker(ticks=sorted(fairloss_df.fairness.astype(float).unique())),
             "width": 5,
         },
     )
@@ -321,27 +355,27 @@ def fairness_plots(metrics_history):
     H = 75
 
     def plot_timeline_w_optimum(metric, optimum=np.argmin):
-        assert any(metric == metrics_history.metric)
-        loss_history = metrics_history.query("metric == @metric")
-        epoch_mins = loss_history.groupby("fairness").apply(lambda df: df.iloc[df.agg(optimum)["value"]])
-        kw = dict(x="epoch", y="value", ylabel=metric, height=H, yticks=FixedTicker(ticks=[0.12, 0.18]), legend=False)
-        grey_lines = loss_history.hvplot(**kw, by="fairness", c="grey", line_width=0.5)
+        epoch_mins = fairloss_df.groupby("fairness").apply(lambda df: df.iloc[df.agg(optimum)[metric]])
+        epoch_mins["color"] = epoch_mins.fairness.astype(float)
+
+        kw = dict(x="epoch", y=metric, height=H, yticks=FixedTicker(ticks=[0.2, 0.3, 0.4]), legend=False)
+        grey_lines = fairloss_df.hvplot(**kw, by="fairness", c="grey", line_width=0.5)
         # colored_scatter = loss_history.hvplot.scatter(**kw, c="color", cnorm="log", s=50, marker="dash")
         colored_minimums = epoch_mins.hvplot.scatter(**kw, c="color", cnorm="log", marker="x", s=150)
         return grey_lines * colored_minimums
 
-    timeline_plots = (
-        plot_timeline_w_optimum("val loss").opts(ylabel="ℒ (val)").opts(ylim=(0.6, 1), yticks=2)
-        + plot_timeline_w_optimum("Δ_eq_odds_t0_dev").opts(ylabel="Δodds0")
-        + plot_timeline_w_optimum("Δ_eq_odds_t1_dev").opts(ylabel="Δodds1")
-    )
+    timeline_plots = plot_timeline_w_optimum("val loss").opts(ylabel="ℒ (val)").opts(
+        ylim=(0.6, 1), yticks=2
+    ) + plot_timeline_w_optimum(fair_col).opts(ylabel="ΔOdds")
     timeline_plots.cols(1).opts(hv.opts.Scatter(colorbar=False, xaxis=None)).opts(
         shared_axes=False, title="Minimums for values of λ (fairness loss multipliers)", toolbar=None
     )
 
     timeline_plots[-1].opts(hv.opts.Scatter(**colorbar_kw, xaxis=True)).opts(height=H + 120)
     # PLOT 2
-    timeline_plots
+    pn.serve(timeline_plots)
+
+    return fairness_metrics_and_multiplier, timeline_plots
 
 
 if __name__ == "__main__":
