@@ -19,6 +19,3 @@ Run the [eval_model.py](.\src\open_fairprune\eval_model.py)
 
 # Running shap
 Examine and run the [shap_explainer.py](.\src\open_fairprune\shap_explainer.py) (takes a while)
-
-# Fairprune
-The fairprune implementation is in `fairprune.py` in `fairprune` and `get_parameter_salience` functions.
