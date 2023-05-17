@@ -477,6 +477,5 @@ if __name__ == "__main__":
             fairness_metrics_and_multiplier,
             timeline_plots,
             pareto_curve,
-            mcc_ods,
         )
     )
