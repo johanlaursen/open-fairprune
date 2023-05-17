@@ -19,3 +19,10 @@ Run the [eval_model.py](.\src\open_fairprune\eval_model.py)
 
 # Running shap
 Examine and run the [shap_explainer.py](.\src\open_fairprune\shap_explainer.py) (takes a while)
+
+# Data analysis
+## Preliminary numerical data analysis
+See [explore_dataset.ipynb](.\src\explore_dataset.ipynb)
+
+## Preliminary distributional plots
+See [data_exploration.py](.\src\open_fairprune\data_exploration.py)
