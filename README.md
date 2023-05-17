@@ -1,7 +1,6 @@
 # open-fairprune
 
 # Install
-<<<<<<< HEAD
 Run the install.bat script. For Linux, examine the script and run the equivalent commands. This creates a venv folder, which you should use to run the files.
 
 You'll get 2 additional commands
@@ -13,11 +12,6 @@ Examine the main function in [fairprune.py](.\src\open_fairprune\fairprune.py)
 
 # Running out models
 The data directory already contains some runs. Upon loading these, you'll get an error stating it cannot find the path C/USERNAME. You therefore need to change the [artifact_uri](.\data\mlruns\0\08a5ecfcb09b4ee9a9eaf8a1065198e0\meta.yaml)
-=======
-Create conda or venv environment with pytorch and cuda (see [pytorch install documentation](https://pytorch.org/get-started/locally/))
-
-Then run 'pip install -e .' in the root folder
->>>>>>> fa021ddfcfd3a78fca7faecf2341e8d822578848
 
 # Fairprune
 The fairprune implementation is in `fairprune.py` in `fairprune` and `get_parameter_salience` functions.
