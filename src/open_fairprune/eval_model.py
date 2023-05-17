@@ -372,7 +372,10 @@ def fairness_constraint_parato_curve():
     # ]
 
     pareto_curves = hv.Overlay(
-        [plot_pareto_curve(df, fair_col="EOdd_sep_abs", perf_col="matthews") for df in [groupwise_df]]
+        [
+            plot_pareto_curve(df, fair_col="EOdd_sep_abs", perf_col="matthews")
+            for df in [groupwise_df, fairloss_df_finetune, fairloss_df_init, fairprune_df]
+        ]
     ).opts(width=300, height=300, legend_position="bottom_right", xlim=(-0.01, 0.8))
     pareto_curves.opts(hv.opts.Scatter(alpha=0.1))
     return pareto_curves
@@ -467,7 +470,7 @@ if __name__ == "__main__":
     print(fairprune_metrics)
 
     roc_curve = ROC_curve(y_pred, y_true, group)
-    mcc_ods = groupwise_clfs_mcc_odds(y_pred, y_true, group)
+    # mcc_ods = groupwise_clfs_mcc_odds(y_pred, y_true, group)
 
     fairness_metrics_and_multiplier, timeline_plots = fairness_loss_plots()
     pareto_curve = fairness_constraint_parato_curve()
