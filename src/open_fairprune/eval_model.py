@@ -146,7 +146,7 @@ def get_fairness_metrics(y_pred, y_true, group, *, thresh=0.5, verbose=False) ->
     return FairnessMetrics(Δ_parity, Δ_eq_odds_t0, Δ_eq_odds_t1, Δ_eq_out_s0, Δ_eq_out_s1)
 
 
-def get_general_metrics(y_pred, y_true, group, thresh=0.5) -> FairnessMetrics:
+def get_general_metrics(y_pred, y_true, group, *, thresh=0.5) -> FairnessMetrics:
     df = pd.DataFrame(
         {
             "G": group,
@@ -228,37 +228,29 @@ def ROC_curve(y_pred, y_true, group):
     return plot
 
 
-def MCC_Odds(y_pred, y_true, group):
+def groupwise_clfs_mcc_odds(y_pred, y_true, group):
+    matthews = MatthewsCorrCoef(num_classes=2, task="binary")
+
+    is_g0 = group * -1 + 1
+    is_g1 = group
+    y_pred_binary = torch.tensor(y_pred)
+
     data = []
-    for threshold in range(0, 101, 2):
-        matthews = MatthewsCorrCoef(num_classes=2, task="binary", threshold=threshold / 100)
-        metrics = get_general_metrics(y_pred, y_true, group, thresh=threshold / 100)
-        mcc = matthews(torch.tensor(y_pred[:, 1]), torch.tensor(y_true))
-        data.append(("g = 0", metrics.fpr.group0, metrics.tpr.group0, mcc, threshold / 100))
-        data.append(("g = 1", metrics.fpr.group1, metrics.tpr.group1, mcc, threshold / 100))
+    for threshold_g0 in range(1, 100, 2):
+        for threshold_g1 in range(1, 100, 2):
+            individual_thresholds = (is_g0 * threshold_g0 + is_g1 * threshold_g1) / 100
+            y_pred_binary[:, 0] = y_pred[:, 0] <= individual_thresholds
+            y_pred_binary[:, 1] = y_pred[:, 1] > individual_thresholds
 
-    df = pd.DataFrame(data, columns=["G", "fpr", "tpr", "mcc", "thresh"])
+            mcc = matthews(y_pred_binary[:, 1], y_true)
+            eodds = FairPruneMetrics.from_general_metrics(
+                get_general_metrics(y_pred_binary, y_true, group)
+            ).EOdd_sep_abs
+            data.append((eodds.item(), mcc.item(), threshold_g0 / 100, threshold_g1 / 100))
 
-    # Convert tensor values to floats
-    df[["fpr", "tpr", "mcc"]] = df[["fpr", "tpr", "mcc"]].applymap(lambda x: x.item())
-
-    # Split the dataframe into two groups
-    df0 = df[df["G"] == "g = 0"]
-    df1 = df[df["G"] == "g = 1"]
-
-    # Rename columns for merging
-    df0 = df0.rename(columns={"fpr": "fpr0", "tpr": "tpr0"})
-    df1 = df1.rename(columns={"fpr": "fpr1", "tpr": "tpr1"})
-
-    # Merge dataframes on thresh
-    df_merged = pd.merge(df0, df1, on=["thresh", "mcc"])
-
-    # Compute delta equalized odds
-    df_merged["DEOdds"] = abs(df_merged["tpr0"] - df_merged["tpr1"]) + abs(df_merged["fpr0"] - df_merged["fpr1"])
-
-    # Print df
-    df_merged.to_csv("../../data/mcc_odds.csv", index=False)
-    return df_merged
+    df = pd.DataFrame(data, columns=["EOdd_sep_abs", "matthews", "thresh_g0", "thresh_g1"])
+    df.to_csv(DATA_PATH / "mcc_odds.csv", index=False)
+    return df
 
 
 def get_all_metrics(model_output, true, group, log_mlflow_w_suffix=None):
@@ -321,35 +313,35 @@ def get_fairness_loss_metrics(resume_run_id):
     return wide_format_df.reset_index()
 
 
-def get_pareto_curve_df(metrics_df, fair_col, perf_col):
-    pareto_frontier = metrics_df.sort_values(fair_col)
-    x = pareto_frontier[perf_col]
-    while not all(increasing := x > x.shift(1).fillna(0)):
-        pareto_frontier = pareto_frontier[increasing]
-        x = pareto_frontier[perf_col]
-    next_point_same_value = pareto_frontier.assign(**{fair_col: pareto_frontier[fair_col].shift(-1)})
-
-    return pd.concat([pareto_frontier, next_point_same_value]).sort_values([perf_col, fair_col])
-
-
-def plot_pareto_curve(metrics_df, fair_col, perf_col):
-    kw = dict(
-        x=fair_col,
-        title="Pareto frontier",
-        xlabel="Equalized odds",
-        ylabel="MCC",
-        c=metrics_df.color.iloc[0],
-        hover_cols="all",
-    )  # hover_cols=["fairness"],
-
-    pareto_line = get_pareto_curve_df(metrics_df, fair_col, perf_col).hvplot(y=perf_col, **kw)
-    possible_values_plot = metrics_df.hvplot.scatter(y=perf_col, s=5, **kw)
-    return possible_values_plot * pareto_line.relabel(metrics_df.metric.iloc[0])
-
-
 def fairness_constraint_parato_curve():
-    fairloss_df_finetune = get_fairness_loss_metrics(FINETUNE_RUN_ID).assign(metric="λloss_cp", color="purple")
-    fairloss_df_init = get_fairness_loss_metrics(INIT_RUN_ID).assign(metric="λloss_init", color="indigo")
+    # Helper 1
+    def get_pareto_curve_df(metrics_df, fair_col, perf_col):
+        pareto_frontier = metrics_df.sort_values(fair_col)
+        x = pareto_frontier[perf_col]
+        while not all(increasing := x > x.shift(1).fillna(0)):
+            pareto_frontier = pareto_frontier[increasing]
+            x = pareto_frontier[perf_col]
+        next_point_same_value = pareto_frontier.assign(**{fair_col: pareto_frontier[fair_col].shift(-1)})
+
+        return pd.concat([pareto_frontier, next_point_same_value]).sort_values([perf_col, fair_col])
+
+    # Helper 2
+    def plot_pareto_curve(metrics_df, fair_col, perf_col):
+        kw = dict(
+            x=fair_col,
+            title="Pareto frontier",
+            xlabel="Equalized odds",
+            ylabel="MCC",
+            c=metrics_df.color.iloc[0],
+            hover_cols="all",
+        )  # hover_cols=["fairness"],
+
+        pareto_line = get_pareto_curve_df(metrics_df, fair_col, perf_col).hvplot(y=perf_col, **kw)
+        possible_values_plot = metrics_df.hvplot.scatter(y=perf_col, s=5, **kw)
+        return possible_values_plot * pareto_line.relabel(metrics_df.metric.iloc[0])
+
+    fairloss_df_finetune = get_fairness_loss_metrics(FINETUNE_RUN_ID).assign(metric="ℒ(λ)_cp", color="orange")
+    fairloss_df_init = get_fairness_loss_metrics(INIT_RUN_ID).assign(metric="ℒ(λ)_init", color="forestgreen")
     fairloss_df_init = (
         fairloss_df_init.groupby("fairness")
         .apply(lambda x: x.loc[x["matthews"].nlargest(5).index])
@@ -357,23 +349,32 @@ def fairness_constraint_parato_curve():
     )
 
     fairprune_df = pd.DataFrame(json.load(open(DATA_PATH / "fairprune_hyperparameter_search.json"))).assign(
-        color="orange", metric="fairprune"
+        color="purple", metric="fairprune"
     )
     fairprune_df.columns = fairprune_df.columns.str.replace("('matthews', 'total')", "matthews")
 
-    groupwise_df = (
-        pd.read_csv(DATA_PATH / "mcc_odds.csv")
-        .rename(columns={"mcc": "matthews", "DEOdds": "EOdd_sep_abs"})
-        .assign(color="magenta", metric="group-clfs")
-    )
+    groupwise_df = pd.read_csv(DATA_PATH / "mcc_odds.csv").assign(color="black", metric="group-clfs")
+    groupwise_df["bins"] = pd.cut(groupwise_df["EOdd_sep_abs"], bins=100)
+    max_bins = (
+        groupwise_df.groupby("bins").apply(lambda x: x.loc[x["matthews"].nlargest(1).index]).reset_index(drop=True)
+    ).drop(columns="bins")
+    groupwise_df = pd.concat([groupwise_df.query("EOdd_sep_abs < 0.01"), max_bins]).drop(columns="bins")
+
+    # This is used to test if the groupwise_df shows a similar trend for the test and dev set
+    # We select the best parameters for the dev set, and select only those to show for the test set
+    # This is run on the dev set
+    # idx = ["thresh_g0", "thresh_g1"]
+    # foobar = groupwise_df[["thresh_g0", "thresh_g1"]]
+    # This is run on the test set
+    # groupwise_df = groupwise_df.set_index(idx).join(foobar.set_index(idx), how="inner")
+    # groupwise_df[
+    #     groupwise_df[["thresh_g0", "thresh_g1"]].isin(foobar.drop_duplicates().reset_index(drop=True)).all(axis=1)
+    # ]
 
     pareto_curves = hv.Overlay(
-        [
-            plot_pareto_curve(df, fair_col="EOdd_sep_abs", perf_col="matthews")
-            for df in [fairloss_df_finetune, fairloss_df_init, fairprune_df, groupwise_df]
-        ]
-    ).opts(width=300, height=300, legend_position="bottom_right", xlim=(0, 0.8))
-    pareto_curves
+        [plot_pareto_curve(df, fair_col="EOdd_sep_abs", perf_col="matthews") for df in [groupwise_df]]
+    ).opts(width=300, height=300, legend_position="bottom_right", xlim=(-0.01, 0.8))
+    pareto_curves.opts(hv.opts.Scatter(alpha=0.1))
     return pareto_curves
 
 
@@ -430,11 +431,11 @@ def fairness_loss_plots():
         colored_minimums = epoch_mins.hvplot.scatter(**kw, c="color", cnorm="log", marker="x", s=150)
         return grey_lines * colored_minimums
 
-    timeline_plots = plot_timeline_w_optimum("val loss").opts(ylabel="ℒ (val)").opts(
+    timeline_plots = plot_timeline_w_optimum("val loss").opts(ylabel="ℒ [val]").opts(
         ylim=(0.6, 1), yticks=2
     ) + plot_timeline_w_optimum(fair_col).opts(ylabel="ΔOdds")
     timeline_plots.cols(1).opts(hv.opts.Scatter(colorbar=False, xaxis=None)).opts(
-        shared_axes=False, title="Minimums for values of λ (fairness loss multipliers)", toolbar=None
+        shared_axes=False, title="Minimums of the method ℒ(λ)_cp across λ", toolbar=None
     )
 
     timeline_plots[-1].opts(hv.opts.Scatter(**colorbar_kw, xaxis=True)).opts(height=H + 120)
@@ -466,7 +467,7 @@ if __name__ == "__main__":
     print(fairprune_metrics)
 
     roc_curve = ROC_curve(y_pred, y_true, group)
-    mcc_ods = MCC_Odds(y_pred, y_true, group)
+    mcc_ods = groupwise_clfs_mcc_odds(y_pred, y_true, group)
 
     fairness_metrics_and_multiplier, timeline_plots = fairness_loss_plots()
     pareto_curve = fairness_constraint_parato_curve()
