@@ -136,9 +136,6 @@ def hyperparameter_search_fairprune(RUN_ID, device, lossfunc):
 
                 fairness_metrics, general_metrics, fairprune_metrics = get_all_metrics(y_pred, y_true, group)
 
-                df_gen = pd.DataFrame(general_metrics, index=general_metrics._fields).astype(float).stack()
-                df_fairness = pd.DataFrame(fairness_metrics, index=fairness_metrics._fields).astype(float).stack()
-                df_fairprune = pd.DataFrame(fairprune_metrics, index=fairprune_metrics._fields).astype(float).stack()
                 result_dict = (
                     pd.concat([flatten(fairness_metrics), flatten(general_metrics).stack(), flatten(fairprune_metrics)])
                     .squeeze()
