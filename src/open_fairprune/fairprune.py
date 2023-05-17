@@ -191,7 +191,7 @@ def hyperparameter_search_fairprune(RUN_ID, device, lossfunc):
 if __name__ == "__main__":
     prune_ratio = 0.3
     beta = 0.5
-    hyperparameter_search = True
+    hyperparameter_search = False
     RUN_ID = "7b9c67bcf82b40328baf2294df5bd1a6"
     device = torch.device("cuda")
     lossfunc = nn.CrossEntropyLoss()
