@@ -204,12 +204,3 @@ if __name__ == "__main__":
     print(features.shape)
     print(group.shape)
     print(labels.shape)
-
-    def sample_df(df):
-        return df.sample(10_000, replace=True, random_state=42)
-
-    equal_df = pd.DataFrame(np.hstack([labels[:, None], features])).groupby(0).apply(sample_df)
-    equal_X, equal_y = equal_df.iloc[:, 1:].values, equal_df.iloc[:, 0].values
-    assert equal_X.shape == (20_000, INPUT_SIZE)
-    assert equal_y.shape == (20_000,)
-    assert sum(equal_y) == 10_000
