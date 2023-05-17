@@ -98,7 +98,7 @@ def hyperparameter_search_fairprune(RUN_ID, device, lossfunc):
 
     target_tradeoff = 0.35
     prune_ratios = np.insert(prune_ratios, np.searchsorted(prune_ratios, target_tradeoff), target_tradeoff)
-    data, group, y_true = get_dataset("dev")
+    data, group, y_true = get_dataset("test")
     train = get_dataset("train")
     data_accuracy = {"prune_ratio": prune_ratios}
     data_eodd = {"prune_ratio": prune_ratios}
