@@ -1,0 +1,15 @@
+artifact_uri: file://C:\Users\Christoffer\Documents\git\open-fairprune\data\mlruns/0/b64e0b7a1c9d4644a1e46042cd4c2cca/artifacts
+end_time: 1684228845081
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: b64e0b7a1c9d4644a1e46042cd4c2cca
+run_name: overjoyed-slug-911
+run_uuid: b64e0b7a1c9d4644a1e46042cd4c2cca
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1684228826085
+status: 3
+tags: []
+user_id: Christoffer
