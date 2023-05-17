@@ -10,8 +10,14 @@ You'll get 2 additional commands
 # Applying fairprune
 Examine the main function in [fairprune.py](.\src\open_fairprune\fairprune.py)
 
-# Running out models
+# Running our models
 The data directory already contains some runs. Upon loading these, you'll get an error stating it cannot find the path C/USERNAME. You therefore need to change the [artifact_uri](.\data\mlruns\0\08a5ecfcb09b4ee9a9eaf8a1065198e0\meta.yaml)
+
+# Running our plots
+Run the [eval_model.py](.\src\open_fairprune\eval_model.py)
+
+# Running shap
+Examine and run the [shap_explainer.py](.\src\open_fairprune\shap_explainer.py) (takes a while)
 
 # Fairprune
 The fairprune implementation is in `fairprune.py` in `fairprune` and `get_parameter_salience` functions.
